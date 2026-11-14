@@ -3361,3 +3361,159 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .shop-children { margin: 0 0 0 0.85rem; padding: 0 0 0.2rem 0.7rem; border-left: 2px solid var(--pine-soft, #e6f2eb); }
 .shop-item.is-child { margin-top: 0; }
 .shop-group.is-bought .shop-item.is-parent .title { text-decoration: line-through; color: var(--ink-3); }
+
+/* v14 recipe group collapse */
+.tick-check {
+  display: flex;
+  align-items: flex-start;
+  flex: 0 0 auto;
+  padding: 0.45rem 0.15rem 0.45rem 0;
+  cursor: pointer;
+}
+.tick-check input {
+  width: 1.35rem;
+  height: 1.35rem;
+  margin: 0.1rem 0 0;
+  flex: 0 0 auto;
+  accent-color: var(--pine);
+}
+.tick-item.is-parent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.15rem;
+}
+.group-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0.45rem 0.1rem 0.45rem 0.15rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+.group-toggle .tick-text,
+.group-toggle .shop-parent-copy,
+.group-toggle .title,
+.group-toggle .tick-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.group-chevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-3);
+  transition: transform 0.18s ease;
+  transform: rotate(0deg);
+  padding-top: 0.1rem;
+}
+.tick-group:not(.is-collapsed) .group-chevron,
+.shop-group:not(.is-collapsed) .group-chevron {
+  transform: rotate(90deg);
+}
+.tick-group.is-collapsed .tick-sub,
+.shop-group.is-collapsed .shop-children {
+  display: none;
+}
+.shop-item.is-parent {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: start;
+  padding: 0.7rem 0.75rem;
+}
+.shop-item.is-parent .tick-check {
+  padding-top: 0.85rem;
+}
+.shop-parent-main {
+  min-width: 0;
+}
+.shop-item.is-parent .group-toggle {
+  display: grid;
+  grid-template-columns: 4.4rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.15rem 0;
+}
+.shop-item.is-parent .group-toggle .thumb {
+  width: 4.4rem;
+  height: 4.4rem;
+}
+.shop-parent-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.15rem;
+}
+.shop-group.is-collapsed .shop-item.is-parent {
+  border-radius: 0.9rem;
+  border-bottom: 0;
+}
+
+/* v14 tab bar picker */
+.nav-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.35rem 0 0.85rem;
+}
+.nav-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--surface);
+  min-width: 0;
+}
+.nav-pick-row.is-avail { background: var(--bg); }
+.nav-pick-ic {
+  flex: 0 0 auto;
+  color: var(--pine);
+  display: inline-flex;
+}
+.nav-pick-row .grow {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+.nav-pick-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.nav-pick-tools .icon-btn {
+  width: 2.15rem;
+  height: 2.15rem;
+  padding: 0;
+}
+.nav-pick-tools [data-action="nav-tab-up"] .icon { transform: rotate(-90deg); }
+.nav-pick-tools [data-action="nav-tab-down"] .icon { transform: rotate(90deg); }
+.nav-pick-tools .icon-btn:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.nav-pick-row.is-avail .btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.tabbar .tab-btn {
+  white-space: normal;
+  line-height: 1.15;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+  padding: 0 0.12rem;
+}

@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=13";
+} from "./data.js?v=14";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=13";
-import { escapeHtml, icon } from "./icons.js?v=13";
+} from "./dates.js?v=14";
+import { escapeHtml, icon } from "./icons.js?v=14";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=13";
+} from "./reminders.js?v=14";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=13";
+} from "./rules.js?v=14";
 import {
   arrangedRestList,
   currentHelper,
@@ -94,12 +94,15 @@ import {
   normalizeConsent,
   uid,
   UI_NAV,
-  UI_HOME,
+  NAV_TAB_MAX,
   loadUiPrefs,
-  setUiPref,
-  isNavVisible,
-  isHomeVisible,
-} from "./storage.js?v=13";
+  getNavTabs,
+  addNavTab,
+  removeNavTab,
+  moveNavTab,
+  isShopGroupCollapsed,
+  setShopGroupCollapsed,
+} from "./storage.js?v=14";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -125,7 +128,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=13";
+} from "./share.js?v=14";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -140,7 +143,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=13";
+} from "./docs.js?v=14";
 import {
   CATEGORIES,
   DIET_KEYS,
@@ -187,8 +190,8 @@ import {
   urlHost,
   weekDates,
   webSearchUrls,
-} from "./menu.js?v=13";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=13";
+} from "./menu.js?v=14";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=14";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -606,41 +609,23 @@ function header(titleSub) {
 
 const NAV_HIDDEN = ["role", "onboard", "helper-new", "helper-edit", "h-enter"];
 
-function navOn(id) {
-  return isNavVisible(uiPrefs, role, id);
+function navCatalog() {
+  return UI_NAV[role === "helper" ? "helper" : "employer"];
 }
 
-function homeOn(id) {
-  return isHomeVisible(uiPrefs, role, id);
+function navMeta(id) {
+  const mid = navCatalog().find((item) => item.id === id);
+  if (mid) return mid;
+  if (id === "home") return { id, labelKey: "tab.home", icon: "home" };
+  if (id === "h") return { id, labelKey: "tab.mine", icon: "home" };
+  if (id === "more" || id === "h-more") return { id, labelKey: "tab.more", icon: "more" };
+  return null;
 }
 
-function allNavItems() {
-  return role === "helper"
-    ? [
-        ["h", "tab.mine", "home"],
-        ["h-leave", "tab.leave", "leaf"],
-        ["h-tasks", "tab.tasks", "checklist"],
-        ["h-rules", "tab.rules", "rule"],
-        ["h-shop", "shop.title", "basket"],
-        ["h-menu", "menu.title", "utensils"],
-        ["h-pay", "pay.title", "coin"],
-        ["h-more", "tab.more", "more"],
-      ]
-    : [
-        ["home", "tab.home", "home"],
-        ["leave", "tab.leave", "leaf"],
-        ["tasks", "tab.tasks", "checklist"],
-        ["rules", "tab.rules", "rule"],
-        ["shop", "shop.title", "basket"],
-        ["menu", "menu.title", "utensils"],
-        ["pay", "pay.title", "coin"],
-        ["share", "share.title", "share"],
-        ["more", "tab.more", "more"],
-      ];
-}
-
-function visibleNavItems() {
-  return allNavItems().filter(([id]) => navOn(id));
+function barNavItems() {
+  const home = role === "helper" ? "h" : "home";
+  const more = role === "helper" ? "h-more" : "more";
+  return [home, ...getNavTabs(uiPrefs, role), more].map(navMeta).filter(Boolean);
 }
 
 function navCurrentId(tab) {
@@ -660,35 +645,55 @@ function navCurrentId(tab) {
               : role === "helper" && H_MORE_GROUP.includes(tab)
                 ? "h-more"
                 : tab;
-  if (!navOn(cur) && cur !== "home" && cur !== "h") cur = role === "helper" ? "h-more" : "more";
+  const ids = new Set(barNavItems().map((item) => item.id));
+  if (!ids.has(cur)) cur = role === "helper" ? "h-more" : "more";
   return cur;
 }
 
 function viewDisplayPrefs() {
-  const bucket = role === "helper" ? "helper" : "employer";
-  const row = (group, item) => {
-    const on = (uiPrefs[bucket][group] || {})[item.id] !== false;
-    return `<label class="switch-field">
-      <span>${tr(item.labelKey)}</span>
-      <span class="switch"><input type="checkbox" data-action="ui-pref" data-group="${group}" data-key="${item.id}" ${on ? "checked" : ""}><span></span></span>
-    </label>`;
+  const selected = getNavTabs(uiPrefs, role);
+  const catalog = navCatalog();
+  const available = catalog.filter((item) => !selected.includes(item.id));
+  const full = selected.length >= NAV_TAB_MAX;
+  const row = (item, kind, index) => {
+    const name = tr(item.labelKey);
+    const tools =
+      kind === "selected"
+        ? `<div class="nav-pick-tools">
+            <button class="icon-btn" type="button" data-action="nav-tab-up" data-id="${item.id}" ${index === 0 ? "disabled" : ""} aria-label="${tr("prefs.nav.up", { name })}">${icon("chevron", { size: 16 })}</button>
+            <button class="icon-btn" type="button" data-action="nav-tab-down" data-id="${item.id}" ${index === selected.length - 1 ? "disabled" : ""} aria-label="${tr("prefs.nav.down", { name })}">${icon("chevron", { size: 16 })}</button>
+            <button class="icon-btn" type="button" data-action="nav-tab-remove" data-id="${item.id}" aria-label="${tr("prefs.nav.remove", { name })}">${icon("close", { size: 16 })}</button>
+          </div>`
+        : `<button class="btn secondary small" type="button" data-action="nav-tab-add" data-id="${item.id}" ${full ? "disabled" : ""}>${tr("prefs.nav.addBtn")}</button>`;
+    return `<div class="nav-pick-row ${kind === "available" ? "is-avail" : ""}">
+      <span class="nav-pick-ic" aria-hidden="true">${icon(item.icon, { size: 18 })}</span>
+      <span class="grow">${name}</span>
+      ${tools}
+    </div>`;
   };
   return `
     <div class="card prefs-card">
       <div class="title">${tr("prefs.title")}</div>
-      <p class="tiny muted" style="margin:0.3rem 0 0.2rem">${tr("prefs.lede")}</p>
-      <h2 class="prefs-h">${tr("prefs.nav")}</h2>
-      <p class="tiny muted" style="margin:0 0 0.2rem">${tr("prefs.nav.hint")}</p>
-      ${UI_NAV[bucket].map((item) => row("nav", item)).join("")}
-      <h2 class="prefs-h">${tr("prefs.home")}</h2>
-      <p class="tiny muted" style="margin:0 0 0.2rem">${tr("prefs.home.hint")}</p>
-      ${UI_HOME[bucket].map((item) => row("home", item)).join("")}
+      <p class="tiny muted" style="margin:0.3rem 0 0.2rem">${tr("prefs.lede", { n: NAV_TAB_MAX })}</p>
+      <h2 class="prefs-h">${tr("prefs.nav.selected")}</h2>
+      <div class="nav-pick-list">
+        ${
+          selected.length
+            ? selected.map((id, i) => row(navMeta(id), "selected", i)).join("")
+            : `<p class="tiny muted" style="margin:0">${tr("prefs.nav.empty")}</p>`
+        }
+      </div>
+      <h2 class="prefs-h">${tr("prefs.nav.available")}</h2>
+      <p class="tiny muted" style="margin:0 0 0.35rem">${full ? tr("prefs.nav.full", { n: NAV_TAB_MAX }) : tr("prefs.nav.max", { n: NAV_TAB_MAX, left: NAV_TAB_MAX - selected.length })}</p>
+      <div class="nav-pick-list">
+        ${available.length ? available.map((item) => row(item, "available")).join("") : `<p class="tiny muted" style="margin:0">${tr("prefs.nav.noneLeft")}</p>`}
+      </div>
     </div>`;
 }
 
 function sidebar() {
   if (NAV_HIDDEN.includes(ui.tab)) return "";
-  const items = visibleNavItems();
+  const items = barNavItems();
   const cur = navCurrentId(ui.tab);
   const home = role === "helper" ? "h" : "home";
   return `
@@ -701,8 +706,8 @@ function sidebar() {
       <nav class="side-nav">
         ${items
           .map(
-            ([id, key, ic]) =>
-              `<button type="button" class="side-link" data-go="${id}" aria-current="${cur === id ? "page" : "false"}">${icon(ic, { size: 19 })}<span>${tr(key)}</span></button>`
+            (t) =>
+              `<button type="button" class="side-link" data-go="${t.id}" aria-current="${cur === t.id ? "page" : "false"}">${icon(t.icon, { size: 19 })}<span>${tr(t.labelKey)}</span></button>`
           )
           .join("")}
       </nav>
@@ -717,7 +722,7 @@ function sidebar() {
 function tabbar() {
   const hidden = ["role", "onboard", "helper-new", "helper-edit", "h-enter"];
   if (hidden.includes(ui.tab)) return "";
-  const tabs = (role === "helper" ? HELPER_TABS : EMPLOYER_TABS).filter((t) => navOn(t.id));
+  const tabs = barNavItems();
   const count = role === "employer" ? badgeCount() : 0;
   const cur = navCurrentId(ui.tab);
   return `
@@ -1059,7 +1064,7 @@ function viewHome() {
   const contractFoot =
     cs.daysLeft == null ? tr("rail.needDates") : h.contractEnd ? tr("home.stat.contractTo", { date: formatDate(h.contractEnd) }) : "";
 
-  const helperPanel = homeOn("helper")
+  const helperPanel = true
     ? `<div class="panel">
         <div class="panel-title"><h2>${tr("home.panel.helper")}</h2><button class="btn secondary small" type="button" data-go="helper-edit">${tr("home.panel.view")}</button></div>
         <div class="profile">
@@ -1079,7 +1084,7 @@ function viewHome() {
         ${h.passportExpiry ? detailRow(tr("home.row.passport"), formatDate(h.passportExpiry)) : ""}
       </div>`
     : "";
-  const remindPanel = homeOn("reminders")
+  const remindPanel = true
     ? `<div class="panel">
         <div class="panel-title"><h2>${tr("home.reminders")}</h2><button class="linkish" type="button" data-go="remind">${tr("common.all")}</button></div>
         ${timelineHtml(reminders.slice(0, 4), "remind")}
@@ -1090,7 +1095,7 @@ function viewHome() {
     ${helperSwitcher()}
     ${installTip()}
     ${
-      homeOn("welcome")
+      true
         ? `<section class="welcome">
       <div>
         <div class="eyebrow">${tr(greetingKey())} · ${tr("home.eyebrow")}</div>
@@ -1101,10 +1106,10 @@ function viewHome() {
     </section>`
         : ""
     }
-    ${homeOn("update") ? sendUpdateCard("home") : ""}
+    ${true ? sendUpdateCard("home") : ""}
 
     ${
-      homeOn("stats")
+      true
         ? `<section class="stat-grid">
       ${statCard({ label: tr("home.stat.contract"), ic: "clock", value: contractValue, unit: contractUnit, foot: contractFoot })}
       ${statCard({
@@ -1131,12 +1136,12 @@ function viewHome() {
 
     ${helperPanel || remindPanel ? `<section class="${helperPanel && remindPanel ? "grid2" : ""}">${helperPanel}${remindPanel}</section>` : ""}
 
-    ${homeOn("menu") ? menuHomeCard() : ""}
+    ${true ? menuHomeCard() : ""}
 
-    ${homeOn("docs") ? idDocsPanel(h, "stored") : ""}
+    ${true ? idDocsPanel(h, "stored") : ""}
 
     ${
-      homeOn("holidays")
+      true
         ? `<section class="panel">
       <div class="panel-title">
         <div><h2>${tr("home.holidays.title", { year })}</h2><span class="sub">${tr("home.holidays.sub")}</span></div>
@@ -1151,7 +1156,7 @@ function viewHome() {
     }
 
     ${
-      homeOn("entries")
+      true
         ? `<section class="section">
       <div class="section-head"><h2>${tr("home.tellHelper")}</h2></div>
       ${entryCards(h, "")}
@@ -1160,7 +1165,7 @@ function viewHome() {
     }
 
     ${
-      homeOn("actions")
+      true
         ? `<div class="btn-row">
       <button class="btn" type="button" data-go="share">${tr("share.generate")}</button>
       <button class="btn secondary" type="button" data-go="helper-edit">${tr("common.editData")}</button>
@@ -2043,6 +2048,25 @@ function parentTickAction() {
   return role === "helper" ? "h-item-tick-group" : "item-tick-group";
 }
 
+function shopGroupToggleHtml(parent, collapsed, inner) {
+  const name = parent.name || "";
+  const label = tr(collapsed ? "shop.recipe.expand" : "shop.recipe.collapse", { name });
+  return `<button type="button" class="group-toggle" data-action="shop-group-toggle" data-id="${escapeHtml(parent.id)}" data-list="${escapeHtml(parent.listId || "")}" data-name="${escapeHtml(name)}" aria-expanded="${collapsed ? "false" : "true"}" aria-label="${escapeHtml(label)}">${inner}<span class="group-chevron" aria-hidden="true">${icon("chevron", { size: 16 })}</span></button>`;
+}
+
+function applyShopGroupCollapsed(group, collapsed) {
+  if (!group) return;
+  group.classList.toggle("is-collapsed", collapsed);
+  const sub = group.querySelector(".tick-sub, .shop-children");
+  if (sub) sub.hidden = collapsed;
+  const btn = group.querySelector('[data-action="shop-group-toggle"]');
+  if (btn) {
+    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    const name = btn.getAttribute("data-name") || "";
+    btn.setAttribute("aria-label", tr(collapsed ? "shop.recipe.expand" : "shop.recipe.collapse", { name }));
+  }
+}
+
 function tickLeafHtml(it, ctx) {
   return `<li class="tick-item ${it.bought ? "is-bought" : ""}" data-item-row>
         <label class="tick-label"><input type="checkbox" data-tick="leaf" data-action="${leafTickAction()}" data-id="${escapeHtml(it.id)}" ${it.bought ? "checked" : ""}>
@@ -2056,12 +2080,14 @@ function tickGroupHtml(parent, children, ctx, hiddenChildDone = 0, hiddenChildTo
   const done = visDone + hiddenChildDone;
   const total = children.length + hiddenChildTotal;
   const checked = total > 0 && done === total;
-  return `<li class="tick-group ${checked ? "is-bought" : ""}" data-recipe-group="${escapeHtml(parent.id)}" data-hidden-child-done="${hiddenChildDone}" data-hidden-child-total="${hiddenChildTotal}">
+  const collapsed = isShopGroupCollapsed(parent.listId, parent.id);
+  const inner = `<span class="tick-text"><span class="tick-name">${escapeHtml(parent.name)}<small data-group-prog>${tr("shop.recipe.progress", { done, total })}</small></span>${parent.note ? `<small class="alt">${escapeHtml(parent.note)}</small>` : ""}</span>`;
+  return `<li class="tick-group ${checked ? "is-bought" : ""} ${collapsed ? "is-collapsed" : ""}" data-recipe-group="${escapeHtml(parent.id)}" data-list="${escapeHtml(parent.listId || "")}" data-hidden-child-done="${hiddenChildDone}" data-hidden-child-total="${hiddenChildTotal}">
         <div class="tick-item is-parent">
-          <label class="tick-label"><input type="checkbox" data-tick="parent" data-action="${parentTickAction()}" data-id="${escapeHtml(parent.id)}" ${checked ? "checked" : ""}>
-            <span class="tick-text"><span class="tick-name">${escapeHtml(parent.name)}<small data-group-prog>${tr("shop.recipe.progress", { done, total })}</small></span>${parent.note ? `<small class="alt">${escapeHtml(parent.note)}</small>` : ""}</span></label>
+          <label class="tick-check"><input type="checkbox" data-tick="parent" data-action="${parentTickAction()}" data-id="${escapeHtml(parent.id)}" ${checked ? "checked" : ""} aria-label="${escapeHtml(tr("shop.recipe.tickAll", { name: parent.name || "" }))}"></label>
+          ${shopGroupToggleHtml(parent, collapsed, inner)}
         </div>
-        <ul class="tick-sub">${children.map((c) => tickLeafHtml(c, ctx)).join("")}</ul>
+        <ul class="tick-sub"${collapsed ? " hidden" : ""}>${children.map((c) => tickLeafHtml(c, ctx)).join("")}</ul>
       </li>`;
 }
 
@@ -2214,17 +2240,19 @@ function shopDetailLeafHtml(item, opts) {
 
 function shopDetailGroupHtml(parent, children, leafHtml) {
   const st = parentTickState(children);
-  return `<section class="shop-group ${st.checked ? "is-bought" : ""}" data-recipe-group="${escapeHtml(parent.id)}">
+  const collapsed = isShopGroupCollapsed(parent.listId, parent.id);
+  const inner = `<span class="thumb" aria-hidden="true">${icon("utensils", { size: 22 })}</span>
+          <span class="shop-parent-copy"><span class="title" style="font-weight:650">${escapeHtml(parent.name)}</span>
+          <span class="tiny muted">${parent.note ? escapeHtml(parent.note) + tr("log.sep") : ""}<span data-group-prog>${tr("shop.recipe.progress", { done: st.done, total: st.total })}</span></span></span>`;
+  return `<section class="shop-group ${st.checked ? "is-bought" : ""} ${collapsed ? "is-collapsed" : ""}" data-recipe-group="${escapeHtml(parent.id)}" data-list="${escapeHtml(parent.listId || "")}">
       <div class="shop-item is-parent">
-        <div class="thumb" aria-hidden="true">${icon("utensils", { size: 22 })}</div>
-        <div>
-          <label class="tick-label tick-inline"><input type="checkbox" data-tick="parent" data-action="${parentTickAction()}" data-id="${escapeHtml(parent.id)}" ${st.checked ? "checked" : ""}>
-          <span class="title" style="font-weight:650">${escapeHtml(parent.name)}</span></label>
-          <div class="tiny muted">${parent.note ? escapeHtml(parent.note) + tr("log.sep") : ""}<span data-group-prog>${tr("shop.recipe.progress", { done: st.done, total: st.total })}</span></div>
+        <label class="tick-check"><input type="checkbox" data-tick="parent" data-action="${parentTickAction()}" data-id="${escapeHtml(parent.id)}" ${st.checked ? "checked" : ""} aria-label="${escapeHtml(tr("shop.recipe.tickAll", { name: parent.name || "" }))}"></label>
+        <div class="shop-parent-main">
+          ${shopGroupToggleHtml(parent, collapsed, inner)}
           ${role === "helper" ? "" : `<div class="btn-row" style="margin-top:0.35rem"><button class="btn secondary" type="button" data-action="item-del" data-id="${escapeHtml(parent.id)}" style="min-height:2.4rem;padding:0.3rem 0.7rem">${tr("shop.recipe.delete")}</button></div>`}
         </div>
       </div>
-      <div class="shop-children">${children.map(leafHtml).join("")}</div>
+      <div class="shop-children"${collapsed ? " hidden" : ""}>${children.map(leafHtml).join("")}</div>
     </section>`;
 }
 
@@ -2818,7 +2846,7 @@ function viewHelperHome() {
   const contractUnit = cs.daysLeft != null && cs.daysLeft >= 0 ? tr("unit.d") : "";
   return `
     ${
-      homeOn("welcome")
+      true
         ? `<section class="welcome">
       <div>
         <div class="eyebrow">${tr(greetingKey())} · ${tr("header.helperView")}</div>
@@ -2831,7 +2859,7 @@ function viewHelperHome() {
         : ""
     }
     ${
-      homeOn("stats")
+      true
         ? `<section class="stat-grid">
       ${statCard({
         label: tr("home.stat.contract"),
@@ -2854,7 +2882,7 @@ function viewHelperHome() {
         : ""
     }
     ${
-      homeOn("entries")
+      true
         ? `<section class="section">
       <div class="section-head"><h2>${tr("hhome.fromEmployer")}</h2></div>
       ${entryCards(h, "h-")}
@@ -2862,17 +2890,17 @@ function viewHelperHome() {
         : ""
     }
     ${
-      homeOn("reminders")
+      true
         ? `<section class="panel" style="margin-top:1rem">
       <div class="panel-title"><h2>${tr("home.reminders")}</h2><button class="linkish" type="button" data-go="h-remind">${tr("common.all")}</button></div>
       ${timelineHtml(reminders, "h-remind")}
     </section>`
         : ""
     }
-    ${homeOn("menu") ? menuHomeCard() : ""}
-    ${homeOn("docs") ? idDocsPanel(h, "session") : ""}
+    ${true ? menuHomeCard() : ""}
+    ${true ? idDocsPanel(h, "session") : ""}
     ${
-      homeOn("ack")
+      true
         ? `<div class="card" style="margin-top:1rem">
       <label class="switch-field">
         <span>
@@ -5292,6 +5320,35 @@ async function onClick(ev) {
     render();
     return;
   }
+  if (action === "nav-tab-add") {
+    uiPrefs = addNavTab(uiPrefs, role, id);
+    render();
+    return;
+  }
+  if (action === "nav-tab-remove") {
+    uiPrefs = removeNavTab(uiPrefs, role, id);
+    render();
+    return;
+  }
+  if (action === "nav-tab-up") {
+    uiPrefs = moveNavTab(uiPrefs, role, id, -1);
+    render();
+    return;
+  }
+  if (action === "nav-tab-down") {
+    uiPrefs = moveNavTab(uiPrefs, role, id, 1);
+    render();
+    return;
+  }
+  if (action === "shop-group-toggle") {
+    const group = act.closest("[data-recipe-group]");
+    const listId = act.getAttribute("data-list") || group?.getAttribute("data-list") || "";
+    const parentId = act.getAttribute("data-id") || group?.getAttribute("data-recipe-group") || "";
+    const next = !group?.classList.contains("is-collapsed");
+    setShopGroupCollapsed(listId, parentId, next);
+    applyShopGroupCollapsed(group, next);
+    return;
+  }
   if (action === "shop-view") {
     ui.shopView = act.getAttribute("data-view") === "cal" ? "cal" : "list";
     ui.shopDay = "";
@@ -5576,15 +5633,7 @@ async function onChange(ev) {
     }
     return;
   }
-  if (action === "ui-pref") {
-    const group = el.getAttribute("data-group");
-    const key = el.getAttribute("data-key");
-    if (group === "nav" || group === "home") {
-      uiPrefs = setUiPref(uiPrefs, role, group, key, el.checked);
-      render();
-    }
-    return;
-  }
+
   if (action === "list-date") {
     const list = state.shopLists.find((l) => l.id === el.getAttribute("data-list"));
     if (!list || !/^\d{4}-\d{2}-\d{2}$/.test(el.value)) return;
