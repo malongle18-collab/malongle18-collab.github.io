@@ -1436,7 +1436,7 @@ function viewHelperForm(mode) {
     <button class="linkish back-row" type="button" data-go="${editing ? "home" : "onboard"}">返回</button>
     <h1 class="screen-title">${editing ? "編輯外傭資料" : "新增外傭"}</h1>
     <form id="helper-form" data-mode="${mode}">
-      <input type="hidden" name="id" value="${escapeHtml(form.id || "")}">
+      <input type="hidden" name="helperId" value="${escapeHtml(form.id || "")}">
       <label class="field"><span>姓名</span>
         <input name="name" required autocomplete="name" value="${escapeHtml(form.name || "")}" maxlength="80">
       </label>
@@ -1451,7 +1451,7 @@ function viewHelperForm(mode) {
       <label class="field"><span>合約開始日期<span class="hint">如與開始受僱日相同，可留空後自動填入</span></span>
         <input type="date" name="contractStart" value="${escapeHtml(form.contractStart || "")}">
       </label>
-      <label class="field"><span>合約屆滿日期<span class="hint">標準合約一般為兩年，可自動計算</span></span>
+      <label class="field"><span>合約屆滿日期<span class="hint">揀合約開始日期後會自動填上兩年合約的屆滿日，亦可自行修改</span></span>
         <input type="date" name="contractEnd" value="${escapeHtml(form.contractEnd || "")}">
       </label>
       <label class="field"><span>每月工資（港元）</span>
@@ -2223,7 +2223,38 @@ function render() {
   bindAfterRender();
 }
 
+function bindHelperContractDates() {
+  const form = document.getElementById("helper-form");
+  if (!form) return;
+  const start = form.elements.startDate;
+  const contractStart = form.elements.contractStart;
+  const contractEnd = form.elements.contractEnd;
+  if (!start || !contractStart || !contractEnd) return;
+  if (contractEnd.value) contractEnd.dataset.manual = "1";
+
+  const fill = () => {
+    if (start.value && !contractStart.value) contractStart.value = start.value;
+    const basis = contractStart.value || start.value;
+    if (!basis) return;
+    if (contractEnd.dataset.manual === "1") return;
+    const end = defaultContractEnd(basis);
+    if (end) {
+      contractEnd.value = end;
+      contractEnd.dataset.autofilled = "1";
+    }
+  };
+
+  start.addEventListener("change", fill);
+  contractStart.addEventListener("change", fill);
+  contractEnd.addEventListener("input", () => {
+    contractEnd.dataset.manual = contractEnd.value ? "1" : "";
+    contractEnd.dataset.autofilled = "";
+  });
+  fill();
+}
+
 function bindAfterRender() {
+  bindHelperContractDates();
   const form = document.getElementById("task-form");
   const schedule = form?.elements?.schedule;
   if (schedule) {
@@ -2264,7 +2295,7 @@ function collectHelperForm(form) {
   const fd = new FormData(form);
   const restRaw = String(fd.get("restDay") || "0");
   return normalizeHelperForm({
-    id: String(fd.get("id") || "") || uid("helper"),
+    id: String(fd.get("helperId") || fd.get("id") || "") || uid("helper"),
     name: String(fd.get("name") || ""),
     nationality: String(fd.get("nationality") || "other"),
     startDate: String(fd.get("startDate") || ""),
@@ -2725,7 +2756,7 @@ async function onChange(ev) {
 function onSubmit(ev) {
   const form = ev.target;
   if (!(form instanceof HTMLFormElement)) return;
-  if (form.id === "helper-form") {
+  if (form.getAttribute("id") === "helper-form") {
     ev.preventDefault();
     const data = collectHelperForm(form);
     if (!data.name) return toast("請填寫姓名");
@@ -2738,7 +2769,7 @@ function onSubmit(ev) {
     toast("已儲存");
     setTab("home");
   }
-  if (form.id === "leave-form") {
+  if (form.getAttribute("id") === "leave-form") {
     ev.preventDefault();
     const fd = new FormData(form);
     const start = String(fd.get("startDate") || "");
@@ -2760,7 +2791,7 @@ function onSubmit(ev) {
     toast(`已登記 ${days} 天假期`);
     render();
   }
-  if (form.id === "pay-form") {
+  if (form.getAttribute("id") === "pay-form") {
     ev.preventDefault();
     const fd = new FormData(form);
     state.payments.push(
@@ -2779,7 +2810,7 @@ function onSubmit(ev) {
     toast("已登記發薪記錄");
     render();
   }
-  if (form.id === "sh-form") {
+  if (form.getAttribute("id") === "sh-form") {
     ev.preventDefault();
     const fd = new FormData(form);
     setShStatus(helper(), form.getAttribute("data-date"), {
@@ -2791,7 +2822,7 @@ function onSubmit(ev) {
     toast("已儲存假日安排");
     render();
   }
-  if (form.id === "task-form") {
+  if (form.getAttribute("id") === "task-form") {
     ev.preventDefault();
     const fd = new FormData(form);
     const weekdays = [...form.querySelectorAll("[name=weekdays]:checked")].map((x) => Number(x.value));
@@ -2816,7 +2847,7 @@ function onSubmit(ev) {
     toast("已儲存工作安排");
     render();
   }
-  if (form.id === "rule-form") {
+  if (form.getAttribute("id") === "rule-form") {
     ev.preventDefault();
     const fd = new FormData(form);
     const rec = newWorkRule({
@@ -2835,7 +2866,7 @@ function onSubmit(ev) {
     toast("已儲存工作守則");
     render();
   }
-  if (form.id === "shop-list-form") {
+  if (form.getAttribute("id") === "shop-list-form") {
     ev.preventDefault();
     const fd = new FormData(form);
     const rec = newShopList({
@@ -2851,7 +2882,7 @@ function onSubmit(ev) {
     toast("已建立清單，可以加入物品和相片");
     setTab("shop-detail");
   }
-  if (form.id === "shop-item-form") {
+  if (form.getAttribute("id") === "shop-item-form") {
     ev.preventDefault();
     const fd = new FormData(form);
     const listId = form.getAttribute("data-list");
@@ -2879,7 +2910,7 @@ function onSubmit(ev) {
     toast("已加入物品");
     render();
   }
-  if (form.id === "helper-unlock") {
+  if (form.getAttribute("id") === "helper-unlock") {
     ev.preventDefault();
     unlockHelper(form);
   }
