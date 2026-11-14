@@ -1,11 +1,11 @@
-const CACHE = "fdh-household-pages-v5";
+const CACHE = "fdh-household-pages-v6";
 const ASSETS = [
   "./",
   "./index.html",
   "./css/app.css",
-  "./css/app.css?v=5",
+  "./css/app.css?v=6",
   "./js/app.js",
-  "./js/app.js?v=5",
+  "./js/app.js?v=6",
   "./js/data.js",
   "./js/dates.js",
   "./js/rules.js",

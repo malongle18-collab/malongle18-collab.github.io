@@ -233,12 +233,12 @@ export function isRestDayOn(helper, iso, arrangedDates = []) {
  * no rest day. Employment Ordinance: at least one rest day of 24 hours
  * in every period of 7 days.
  */
-export function restDayGaps(helper, arrangedDates, fromISO, toISO) {
-  if (!helper || !fromISO || !toISO || fromISO > toISO) return [];
+export function restDayGaps(helper, arrangedDates, fromISO, untilISO) {
+  if (!helper || !fromISO || !untilISO || fromISO > untilISO) return [];
   const startBound = helper.startDate || helper.contractStart;
   const endBound = helper.contractEnd;
   const from = startBound && fromISO < startBound ? startBound : fromISO;
-  let to = toISO;
+  let to = untilISO;
   if (endBound && to > endBound) to = endBound;
   if (!from || from > to) return [];
 
