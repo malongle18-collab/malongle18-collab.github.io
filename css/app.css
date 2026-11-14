@@ -3348,3 +3348,16 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .prefs-card .switch-field span:first-child {
   min-width: 0;
 }
+
+/* v13 recipe groups on shopping lists */
+.tick-group { margin: 0.1rem 0; }
+.tick-item.is-parent .tick-name { font-weight: 700; }
+.tick-item.is-parent .tick-name small { font-weight: 600; }
+.tick-sub { list-style: none; margin: 0 0 0.15rem 0.7rem; padding: 0 0 0 0.55rem; border-left: 2px solid var(--pine-soft, #e6f2eb); }
+.tick-sub .tick-item { padding-left: 0.1rem; }
+.tick-sub .tick-item .recent-badge { margin-left: 2rem; }
+.shop-group { margin: 0.7rem 0; }
+.shop-item.is-parent { background: color-mix(in srgb, var(--pine-soft, #e6f2eb) 55%, var(--surface, #fff)); border-radius: 0.9rem 0.9rem 0 0; }
+.shop-children { margin: 0 0 0 0.85rem; padding: 0 0 0.2rem 0.7rem; border-left: 2px solid var(--pine-soft, #e6f2eb); }
+.shop-item.is-child { margin-top: 0; }
+.shop-group.is-bought .shop-item.is-parent .title { text-decoration: line-through; color: var(--ink-3); }
