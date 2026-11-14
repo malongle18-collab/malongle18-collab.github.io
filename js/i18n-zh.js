@@ -694,6 +694,8 @@ export const zhHant = {
   "recipe.photo.replace": "更換相片",
   "recipe.photo.remove": "移除相片",
   "recipe.photo.max": "最多 {n} 張",
+  "recipe.photo.credit": "相片：{credit}",
+  "recipe.photo.credit.illustrative": "示意相片",
   "recipe.err": "請輸入菜名",
   "recipe.saved": "已儲存菜譜",
   "recipe.deleted": "已刪除菜譜",

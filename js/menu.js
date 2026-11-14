@@ -1,7 +1,7 @@
 /** Meal plan (今日餐單) and recipes (菜譜): pure data helpers, no DOM. */
-import { compressImageFile } from "./share.js?v=18";
-import { getLang } from "./i18n.js?v=18";
-import { LIB_RECIPES } from "./recipes-lib.js?v=18";
+import { compressImageFile } from "./share.js?v=19";
+import { getLang } from "./i18n.js?v=19";
+import { LIB_RECIPES, RECIPE_PHOTO_CREDITS } from "./recipes-lib.js?v=19";
 
 export const DEFAULT_SLOT_KEYS = ["breakfast", "lunch", "dinner", "snack"];
 export const MAX_SLOTS = 12;
@@ -33,19 +33,55 @@ export function libraryOverrideId(r) {
   return "";
 }
 
-export function isRecipePhoto(v) {
-  return /^data:image\//.test(String(v || ""));
+const LIB_PHOTO_PATH_RE = /^images\/recipes\/[A-Za-z0-9._-]+\.(jpe?g|png|webp)$/i;
+const RECIPE_PHOTO_CACHE = "19";
+
+/** Same-origin library file path only: images/recipes/<safe name>.jpg|jpeg|png|webp, no .. or protocol. */
+export function isLibraryPhotoPath(v) {
+  const raw = String(v || "").trim();
+  if (!raw || raw.includes("..") || raw.includes("\\") || raw.includes("://") || raw.startsWith("/") || raw.includes(":")) return false;
+  const path = raw.split("?")[0];
+  return LIB_PHOTO_PATH_RE.test(path);
 }
 
-/** Unique compressed data-URL photos on a recipe (photos[] plus legacy photo). */
+export function isRecipePhoto(v) {
+  const s = String(v || "");
+  return /^data:image\//.test(s) || isLibraryPhotoPath(s);
+}
+
+/** img src: data URLs unchanged; library paths get a cache-bust query. */
+export function recipePhotoSrc(v) {
+  const s = String(v || "");
+  if (/^data:image\//.test(s)) return s;
+  if (!isLibraryPhotoPath(s)) return "";
+  const path = s.split("?")[0];
+  return `${path}?v=${RECIPE_PHOTO_CACHE}`;
+}
+
+export function libraryPhotoPathOf(v) {
+  const s = String(v || "").trim();
+  return isLibraryPhotoPath(s) ? s.split("?")[0] : "";
+}
+
+/** Caption for the first photo if it is a credited library file. */
+export function recipePhotoCreditInfo(r) {
+  const path = libraryPhotoPathOf(recipePhotosOf(r)[0] || "");
+  if (!path) return null;
+  const c = RECIPE_PHOTO_CREDITS[path];
+  return c || null;
+}
+
+/** Unique photos on a recipe (photos[] plus legacy photo): data URLs and same-origin library paths. */
 export function recipePhotosOf(r) {
   const out = [];
   const seen = new Set();
   const add = (v) => {
     const s = String(v || "");
-    if (!isRecipePhoto(s) || seen.has(s)) return;
-    seen.add(s);
-    out.push(s);
+    if (!isRecipePhoto(s)) return;
+    const key = libraryPhotoPathOf(s) || s;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(key);
   };
   if (Array.isArray(r?.photos)) r.photos.forEach(add);
   add(r?.photo);
@@ -261,7 +297,9 @@ export function recipeNoLabel(r) {
 
 /** Apply a local override onto a library recipe. id / no / builtin stay from the library. */
 export function mergeLibraryOverride(base, override) {
-  const photos = recipePhotosOf(override);
+  const o = override || {};
+  const hasPhotoField = Object.prototype.hasOwnProperty.call(o, "photos") || Object.prototype.hasOwnProperty.call(o, "photo");
+  const photos = hasPhotoField ? recipePhotosOf(o) : recipePhotosOf(base);
   return {
     ...base,
     nameZh: override.nameZh,
@@ -603,6 +641,11 @@ export async function recipesForShare(recipes, { withPhotos = true } = {}) {
     const photos = [];
     if (withPhotos) {
       for (const src of recipePhotosOf(r)) {
+        const libPath = libraryPhotoPathOf(src);
+        if (libPath) {
+          photos.push(libPath);
+          continue;
+        }
         try {
           const blob = await (await fetch(src)).blob();
           const small = await compressImageFile(blob, { maxSize: 360, quality: 0.5 });

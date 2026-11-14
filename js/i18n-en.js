@@ -694,6 +694,8 @@ export const en = {
   "recipe.photo.replace": "Replace photo",
   "recipe.photo.remove": "Remove photo",
   "recipe.photo.max": "Up to {n} photos",
+  "recipe.photo.credit": "Photo: {credit}",
+  "recipe.photo.credit.illustrative": "Illustrative photo",
   "recipe.err": "Enter a recipe name",
   "recipe.saved": "Recipe saved",
   "recipe.deleted": "Recipe deleted",
