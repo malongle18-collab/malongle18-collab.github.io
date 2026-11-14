@@ -1,4 +1,4 @@
-/* 外傭僱傭助手 — ink, celadon, rice paper. The previous beige-lacquer look is an anti-reference. */
+/* 外傭僱傭助手 — ColorHunt 194350 / FF8882 / FFC2B4 / 9DBEB8 */
 
 @font-face {
   font-family: "FDH Sans";
@@ -24,31 +24,31 @@
 
 :root {
   color-scheme: light dark;
-  --shell: #14342e;
-  --shell-ink: #f4efe4;
-  --shell-muted: color-mix(in srgb, var(--shell-ink) 72%, #7aa898);
-  --bg: #f1eee6;
-  --bg-deep: #e4e0d6;
-  --surface: #fbf9f4;
-  --surface-2: #efece3;
-  --ink: #14211e;
-  --ink-2: #3a4a45;
-  --ink-3: #5c6b66;
-  --line: #d5d0c4;
-  --line-strong: #b7b1a4;
-  --pine: #1f5c4c;
-  --pine-soft: #d5e6df;
-  --seal: #c23a2b;
-  --seal-soft: #f6e0dc;
-  --brass: #8d6e30;
-  --brass-soft: #eee4c8;
-  --ok: #1f5c4c;
-  --warn: #8a4b12;
-  --warn-soft: #f3e4cc;
-  --danger: #9b1e1e;
-  --danger-soft: #f5dcdc;
-  --shadow: 0 0.65rem 1.5rem rgba(20, 33, 30, 0.1);
-  --shadow-sm: 0 0.22rem 0.7rem rgba(20, 33, 30, 0.07);
+  --shell: #194350;
+  --shell-ink: #fff8f5;
+  --shell-muted: #9dbeb8;
+  --bg: #f3f6f6;
+  --bg-deep: #e4eeec;
+  --surface: #fffaf8;
+  --surface-2: #f3ebe8;
+  --ink: #194350;
+  --ink-2: #3a5a63;
+  --ink-3: #5d7a80;
+  --line: #c9dbd8;
+  --line-strong: #9dbeb8;
+  --pine: #194350;
+  --pine-soft: #d7e8e5;
+  --seal: #ff8882;
+  --seal-soft: #ffc2b4;
+  --brass: #40676f;
+  --brass-soft: #d5e6e3;
+  --ok: #194350;
+  --warn: #c45c56;
+  --warn-soft: #ffc2b4;
+  --danger: #b44540;
+  --danger-soft: #ffd8d0;
+  --shadow: 0 0.65rem 1.5rem color-mix(in srgb, #194350 14%, transparent);
+  --shadow-sm: 0 0.22rem 0.7rem color-mix(in srgb, #194350 10%, transparent);
   --font-sans: "FDH Sans", "PingFang HK", "Noto Sans HK", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   --font-serif: "FDH Serif", "Songti TC", "Noto Serif TC", "Source Han Serif TC", Palatino, serif;
   --font-num: "FDH Sans", ui-rounded, "PingFang HK", -apple-system, sans-serif;
@@ -64,40 +64,40 @@
   --pad-x: 1.15rem;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --caret: var(--pine);
-  --select-bg: var(--brass-soft);
+  --select-bg: #ffc2b4;
   --focus: var(--pine);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --shell: #0d211c;
-    --shell-ink: #f1ebe0;
-    --shell-muted: color-mix(in srgb, var(--shell-ink) 68%, #3d6b5c);
-    --bg: #121816;
-    --bg-deep: #0c1110;
-    --surface: #1b221f;
-    --surface-2: #242c28;
-    --ink: #f1ebe0;
-    --ink-2: #c9d0cb;
-    --ink-3: #9aa59f;
-    --line: #323c38;
-    --line-strong: #4b5853;
-    --pine: #8fbfab;
-    --pine-soft: #1a2e28;
-    --seal: #e06a5c;
-    --seal-soft: #3a201c;
-    --brass: #e0c07a;
-    --brass-soft: #332c1c;
-    --ok: #8fbfab;
-    --warn: #f0c48a;
-    --warn-soft: #3a2c1c;
-    --danger: #f0a0a0;
-    --danger-soft: #3a1c1c;
-    --shadow: 0 0.65rem 1.5rem rgba(0, 0, 0, 0.4);
-    --shadow-sm: 0 0.22rem 0.7rem rgba(0, 0, 0, 0.3);
-    --caret: var(--brass);
-    --select-bg: #3a3220;
-    --focus: var(--brass);
+    --shell: #194350;
+    --shell-ink: #fff8f5;
+    --shell-muted: #9dbeb8;
+    --bg: #10262c;
+    --bg-deep: #0c1c21;
+    --surface: #17343c;
+    --surface-2: #1c3d46;
+    --ink: #fff8f5;
+    --ink-2: #d5e6e3;
+    --ink-3: #9dbeb8;
+    --line: #2a4d56;
+    --line-strong: #3d656e;
+    --pine: #9dbeb8;
+    --pine-soft: #1a3a42;
+    --seal: #ff8882;
+    --seal-soft: #4a2e2c;
+    --brass: #9dbeb8;
+    --brass-soft: #1e3a3e;
+    --ok: #9dbeb8;
+    --warn: #ffc2b4;
+    --warn-soft: #3a2a28;
+    --danger: #ff8882;
+    --danger-soft: #3a2423;
+    --shadow: 0 0.65rem 1.5rem rgba(0, 0, 0, 0.45);
+    --shadow-sm: 0 0.22rem 0.7rem rgba(0, 0, 0, 0.32);
+    --caret: #ffc2b4;
+    --select-bg: #3a2a28;
+    --focus: #ff8882;
   }
 }
 
