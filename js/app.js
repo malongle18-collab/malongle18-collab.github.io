@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=9";
+} from "./data.js?v=10";
 import {
   addDays,
   daysBetween,
@@ -29,14 +29,18 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=9";
-import { escapeHtml, icon } from "./icons.js?v=9";
+} from "./dates.js?v=10";
+import { escapeHtml, icon } from "./icons.js?v=10";
 import {
+  buildCustomReminders,
   buildReminders,
+  customDueCount,
   isReminderVisible,
+  mergeReminders,
+  nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=9";
+} from "./reminders.js?v=10";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -59,14 +63,19 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=9";
+} from "./rules.js?v=10";
 import {
   arrangedRestList,
   currentHelper,
   demoHelper,
   emptyState,
   exportBackup,
+  catalogKey,
   findCatalog,
+  listDate,
+  newCustomReminder,
+  normalizeCatalog,
+  removeCatalogEntry,
   importBackup,
   loadState,
   normalizeHelperForm,
@@ -80,10 +89,12 @@ import {
   saveState,
   shKey,
   toggleArrangedRestDay,
+  normalizeConsent,
   uid,
-} from "./storage.js?v=9";
+} from "./storage.js?v=10";
 import {
   ACK_KEY,
+  buildPayReturnCode,
   buildSharePayload,
   compressImageFile,
   decryptShare,
@@ -93,18 +104,57 @@ import {
   loadInbox,
   loadRole,
   loadSession,
+  parsePayReturnCode,
   parseShareHash,
+  payConsentMap,
   randomPin,
   receiptPayload,
   removeInbox,
   saveRole,
   saveSession,
   setAcked,
+  setPayConsent,
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=9";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tp } from "./i18n.js?v=9";
+} from "./share.js?v=10";
+import {
+  DOC_TYPES,
+  MAX_DOC_FILES,
+  MAX_SHARE_DOC_CHARS,
+  cleanIdNumber,
+  dataUrlToBlobUrl,
+  docsChars,
+  docsForShare,
+  emptyDocs,
+  hasIdInfo,
+  maskHkid,
+  maskPassport,
+  normalizeDocs,
+  readDocFile,
+} from "./docs.js?v=10";
+import {
+  MAX_DISHES_PER_SLOT,
+  MAX_SLOTS,
+  SHARE_MENU_FUTURE_DAYS,
+  SHARE_MENU_PAST_DAYS,
+  copyDay,
+  dayCount,
+  dayDishes,
+  dishLabel,
+  menuForShare,
+  newDish,
+  newRecipe,
+  parseIngredient,
+  pruneDay,
+  recipesForShare,
+  shiftISO,
+  slotLabel,
+  splitLines,
+  splitTags,
+  weekDates,
+} from "./menu.js?v=10";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tp } from "./i18n.js?v=10";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -139,6 +189,21 @@ const ui = {
   shareReveal: null,
   pinError: "",
   calMode: "rest",
+  docDraft: null,
+  docView: null,
+  reveal: {},
+  shareDocs: false,
+  payslipId: null,
+  shopView: "list",
+  shopCal: { year: new Date().getFullYear(), month: new Date().getMonth() },
+  shopDay: "",
+  sigData: "",
+  returnMsg: "",
+  menuDate: todayISO(),
+  recipeId: null,
+  recipeQuery: "",
+  recipePhoto: "",
+  slotArm: "",
 };
 
 function today() {
@@ -146,7 +211,14 @@ function today() {
 }
 
 function save() {
-  saveState(state);
+  try {
+    saveState(state);
+    return true;
+  } catch (err) {
+    console.warn("Could not save", err);
+    toast(tr("toast.storageFull"));
+    return false;
+  }
 }
 
 function helper() {
@@ -188,9 +260,16 @@ function setRole(next) {
 function setTab(tab) {
   ui.tab = tab;
   ui.sheet = null;
+  ui.reveal = {};
+  ui.docView = null;
+  ui.payslipId = null;
+  ui.returnMsg = "";
   if (!String(tab).startsWith("shop")) ui.shopListId = String(tab).includes("shop-detail") ? ui.shopListId : ui.shopListId;
+  ui.slotArm = "";
   if ((tab === "shop-detail" || tab === "h-shop-detail") && ui.shopListId) {
     location.hash = `#/${tab}/${ui.shopListId}`;
+  } else if ((tab === "recipe" || tab === "h-recipe") && ui.recipeId) {
+    location.hash = `#/${tab}/${ui.recipeId}`;
   } else {
     location.hash = `#/${tab}`;
   }
@@ -207,6 +286,9 @@ const EMPLOYER_ROUTES = new Set([
   "rules",
   "shop",
   "shop-detail",
+  "menu",
+  "recipes",
+  "recipe",
   "share",
   "more",
   "guide",
@@ -222,6 +304,9 @@ const HELPER_ROUTES = new Set([
   "h-rules",
   "h-shop",
   "h-shop-detail",
+  "h-menu",
+  "h-recipes",
+  "h-recipe",
   "h-pay",
   "h-remind",
   "h-rights",
@@ -252,11 +337,13 @@ function parseHash() {
   if (HELPER_ROUTES.has(tab)) {
     ui.tab = tab;
     if (tab === "h-shop-detail" && extra) ui.shopListId = extra;
+    if (tab === "h-recipe" && extra) ui.recipeId = extra;
     return;
   }
   if (EMPLOYER_ROUTES.has(tab)) {
     ui.tab = tab;
     if (tab === "shop-detail" && extra) ui.shopListId = extra;
+    if (tab === "recipe" && extra) ui.recipeId = extra;
     return;
   }
   ui.tab = role === "helper" ? "h" : "home";
@@ -296,7 +383,7 @@ function langSwitch() {
 }
 
 function badgeCount() {
-  return reminderBadgeCount(state.helpers, state.reminderState, today(), arrangedMap());
+  return reminderBadgeCount(state.helpers, state.reminderState, today(), arrangedMap()) + customDueCount(state.customReminders, state.reminderState, today());
 }
 
 function leaveLogsFor(h, type) {
@@ -376,6 +463,8 @@ function pageTitleKey() {
     pay: "pay.title", remind: "home.reminders", shop: "shop.title", "shop-detail": "shop.title",
     share: "share.title", guide: "more.guide", backup: "backup.title", "helper-new": "helper.add", "helper-edit": "form.editTitle",
     h: "tab.mine", "h-leave": "tab.leave", "h-tasks": "tab.tasks", "h-rules": "tab.rules", "h-more": "tab.more",
+    menu: "menu.title", recipes: "recipe.title", recipe: "recipe.title",
+    "h-menu": "menu.title", "h-recipes": "recipe.title", "h-recipe": "recipe.title",
     "h-shop": "shop.title", "h-shop-detail": "shop.title", "h-pay": "pay.title", "h-remind": "home.reminders", "h-rights": "hmore.rights",
   };
   return map[ui.tab] || "tab.home";
@@ -388,7 +477,7 @@ function initialOf(name) {
 
 function header(titleSub) {
   const h = role === "helper" ? helperSession?.payload?.helper : helper();
-  const count = role === "employer" ? badgeCount() : helperReminderList().filter((r) => isReminderVisible(r, {}, today())).length;
+  const count = role === "employer" ? badgeCount() : helperReminderList().filter((r) => isReminderVisible(r, {}, today()) && (r.type !== "custom" || r.date <= today())).length;
   const sub = titleSub || (h ? escapeHtml(h.name || "") : role === "helper" ? tr("header.helperView") : tr("header.employerView"));
   const home = role === "helper" ? "h" : "home";
   const remind = role === "helper" ? "h-remind" : "remind";
@@ -426,8 +515,8 @@ function sidebar() {
           ["h-tasks", "tab.tasks", "checklist"],
           ["h-rules", "tab.rules", "rule"],
           ["h-shop", "shop.title", "basket"],
+          ["h-menu", "menu.title", "utensils"],
           ["h-pay", "pay.title", "coin"],
-          ["h-remind", "home.reminders", "bell"],
           ["h-more", "tab.more", "more"],
         ]
       : [
@@ -436,13 +525,27 @@ function sidebar() {
           ["tasks", "tab.tasks", "checklist"],
           ["rules", "tab.rules", "rule"],
           ["shop", "shop.title", "basket"],
+          ["menu", "menu.title", "utensils"],
           ["pay", "pay.title", "coin"],
-          ["remind", "home.reminders", "bell"],
           ["share", "share.title", "share"],
-          ["guide", "more.guide", "doc"],
-          ["backup", "backup.title", "download"],
+          ["more", "tab.more", "more"],
         ];
-  const cur = ui.tab === "shop-detail" ? "shop" : ui.tab === "h-shop-detail" ? "h-shop" : ui.tab === "more" ? "home" : ui.tab === "h-more" || ui.tab === "h-rights" ? "h-more" : ui.tab;
+  const MORE_GROUP = ["more", "guide", "backup", "remind"];
+  const H_MORE_GROUP = ["h-more", "h-remind", "h-rights"];
+  const cur =
+    ui.tab === "shop-detail"
+      ? "shop"
+      : ui.tab === "h-shop-detail"
+        ? "h-shop"
+        : role !== "helper" && ["menu", "recipes", "recipe"].includes(ui.tab)
+          ? "menu"
+          : role === "helper" && ["h-menu", "h-recipes", "h-recipe"].includes(ui.tab)
+            ? "h-menu"
+            : role !== "helper" && MORE_GROUP.includes(ui.tab)
+          ? "more"
+          : role === "helper" && H_MORE_GROUP.includes(ui.tab)
+            ? "h-more"
+            : ui.tab;
   const home = role === "helper" ? "h" : "home";
   return `
     <aside class="sidebar" aria-label="${tr("aria.mainTabs")}">
@@ -458,7 +561,6 @@ function sidebar() {
               `<button type="button" class="side-link" data-go="${id}" aria-current="${cur === id ? "page" : "false"}">${icon(ic, { size: 19 })}<span>${tr(key)}</span></button>`
           )
           .join("")}
-        <button type="button" class="side-link" data-go="${role === "helper" ? "h-more" : "more"}" aria-current="${ui.tab === "more" || ui.tab === "h-more" ? "page" : "false"}">${icon("more", { size: 19 })}<span>${tr("tab.more")}</span></button>
       </nav>
       <div class="side-bottom">
         ${langSwitch()}
@@ -474,8 +576,8 @@ function tabbar() {
   const tabs = role === "helper" ? HELPER_TABS : EMPLOYER_TABS;
   const count = role === "employer" ? badgeCount() : 0;
   const moreIds = role === "helper"
-    ? ["h-more", "h-pay", "h-remind", "h-rights", "h-shop", "h-shop-detail"]
-    : ["more", "guide", "backup", "pay", "remind", "share", "shop", "shop-detail"];
+    ? ["h-more", "h-pay", "h-remind", "h-rights", "h-shop", "h-shop-detail", "h-menu", "h-recipes", "h-recipe"]
+    : ["more", "guide", "backup", "pay", "remind", "share", "shop", "shop-detail", "menu", "recipes", "recipe"];
   return `
     <nav class="tabbar" aria-label="${tr("aria.mainTabs")}">
       ${tabs
@@ -651,7 +753,7 @@ function timelineHtml(reminders, goKey) {
       (r) => `<button class="event" type="button" data-go="${goKey}">
         <span class="event-date">${formatDate(r.date, { short: true })}</span>
         <span class="dotcol"><i class="dot ${["expired", "critical", "soon", "watch"].includes(r.urgency) ? "warn" : ""}"></i></span>
-        <span class="event-txt"><strong>${escapeHtml(r.title)}</strong><span>${escapeHtml(r.body || "")}</span></span>
+        <span class="event-txt"><strong>${escapeHtml(r.title)}${r.type === "custom" ? ` <span class="tag brass">${tr("remind.custom")}</span>` : ""}</strong><span>${escapeHtml(r.body || "")}</span></span>
       </button>`
     )
     .join("")}</div>`;
@@ -659,6 +761,137 @@ function timelineHtml(reminders, goKey) {
 
 function detailRow(k, v) {
   return `<div class="detail-row"><span>${k}</span><strong>${v}</strong></div>`;
+}
+
+
+/* ---------- keep typed form values across re-renders (toast, language, uploads) ---------- */
+const KEEP_FORMS = ["helper-form", "pay-form", "consent-form", "recipe-form", "dish-form"];
+
+function captureForms() {
+  const out = {};
+  for (const id of KEEP_FORMS) {
+    const form = document.getElementById(id);
+    if (!form) continue;
+    const vals = {};
+    for (const el of Array.from(form.elements)) {
+      if (!el.name || el.type === "hidden" || el.type === "file" || el.type === "submit" || el.type === "button") continue;
+      vals[el.name] = el.type === "checkbox" ? el.checked : el.value;
+    }
+    out[id] = { mode: form.getAttribute("data-mode") || "", helperId: form.elements.helperId?.value || "", vals };
+  }
+  return out;
+}
+
+function restoreForms(keep) {
+  for (const id of Object.keys(keep || {})) {
+    const form = document.getElementById(id);
+    const k = keep[id];
+    if (!form || (form.getAttribute("data-mode") || "") !== k.mode || (form.elements.helperId?.value || "") !== k.helperId) continue;
+    for (const [name, v] of Object.entries(k.vals)) {
+      const el = form.elements[name];
+      if (!el || el instanceof RadioNodeList) continue;
+      if (el.type === "checkbox") el.checked = Boolean(v);
+      else el.value = v;
+    }
+  }
+}
+
+/* ---------- passport / HKID: masked numbers, thumbnails, viewer ---------- */
+
+function ensureDocDraft(mode, editing) {
+  const key = `${mode}:${editing?.id || "new"}`;
+  if (ui.docDraft?.key !== key) {
+    const docs = normalizeDocs(editing?.docs);
+    ui.docDraft = { key, passport: docs.passport, hkid: docs.hkid };
+  }
+  return ui.docDraft;
+}
+
+function docList(src, type) {
+  if (src === "draft") return ui.docDraft?.[type] || [];
+  if (src === "session") return sessionHelper()?.docs?.[type] || [];
+  return helper()?.docs?.[type] || [];
+}
+
+function docThumbs(src, type, { removable = false } = {}) {
+  const files = docList(src, type);
+  return files
+    .map((d, i) => {
+      const body =
+        d.type === "application/pdf"
+          ? `<span class="pdf-badge">${icon("doc", { size: 22 })}<b>PDF</b><i>${escapeHtml(d.name)}</i></span>`
+          : `<img src="${d.data}" alt="${escapeHtml(tr(`doc.kind.${type}`))}">`;
+      return `<div class="doc-thumb">
+        <button type="button" class="doc-thumb-btn" data-action="doc-view" data-src="${src}" data-doc="${type}" data-idx="${i}" aria-label="${tr("doc.view")}">${body}</button>
+        <span class="doc-cap">${tr("doc.view")}</span>
+        ${removable ? `<button type="button" class="doc-del" data-action="doc-del" data-doc="${type}" data-idx="${i}" aria-label="${tr("doc.delete")}">${icon("close", { size: 14 })}</button>` : ""}
+      </div>`;
+    })
+    .join("");
+}
+
+function docEditBlock(type, numberName, numberValue, form) {
+  const files = ui.docDraft?.[type] || [];
+  const isPassport = type === "passport";
+  return `
+    <div class="doc-block" data-doc-type="${type}">
+      <label class="field"><span>${tr(isPassport ? "form.passportNo" : "form.hkidNo")}</span>
+        <input name="${numberName}" value="${escapeHtml(numberValue || "")}" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="${isPassport ? "" : "A123456(7)"}">
+      </label>
+      <div class="doc-files">
+        ${docThumbs("draft", type, { removable: true })}
+        ${
+          files.length < MAX_DOC_FILES
+            ? `<button type="button" class="doc-add" data-action="doc-pick" data-doc="${type}">${icon("upload", { size: 20 })}<span>${tr("doc.upload")}</span></button>
+               <input type="file" accept="image/*,application/pdf" multiple hidden data-doc-input="${type}">`
+            : ""
+        }
+      </div>
+      <p class="hint" style="margin:0.3rem 0 0">${tr(isPassport ? "doc.hint.passport" : "doc.hint.hkid", { n: MAX_DOC_FILES })}</p>
+    </div>`;
+}
+
+function maskedRow(label, field, value, src) {
+  if (!value) return detailRow(label, `<span class="muted">${tr("doc.notAdded")}</span>`);
+  const on = Boolean(ui.reveal[`${src}:${field}`]);
+  const shown = on ? value : field === "hkidNo" ? maskHkid(value) : maskPassport(value);
+  return detailRow(
+    label,
+    `<span class="mask-val"><span class="mono">${escapeHtml(shown)}</span><button type="button" class="eye-btn ${on ? "is-on" : ""}" data-action="toggle-reveal" data-src="${src}" data-field="${field}" aria-pressed="${on}" aria-label="${tr(on ? "doc.hide" : "doc.reveal")}">${icon(on ? "eyeOff" : "eye", { size: 18 })}</button></span>`
+  );
+}
+
+function idDocsPanel(h, src) {
+  if (src === "session" && !hasIdInfo(h)) return "";
+  const empty = !hasIdInfo(h);
+  return `
+    <section class="panel id-panel">
+      <div class="panel-title">
+        <div><h2>${tr("doc.panel.title")}</h2>${src === "session" ? `<span class="sub">${tr("doc.panel.shared")}</span>` : ""}</div>
+        ${src === "stored" ? `<button class="btn secondary small" type="button" data-go="helper-edit">${tr(empty ? "doc.panel.add" : "doc.panel.edit")}</button>` : ""}
+      </div>
+      ${maskedRow(tr("form.passportNo"), "passportNo", h.passportNo, src)}
+      ${(h.docs?.passport || []).length ? `<div class="doc-files">${docThumbs(src, "passport")}</div>` : ""}
+      ${maskedRow(tr("form.hkidNo"), "hkidNo", h.hkidNo, src)}
+      ${(h.docs?.hkid || []).length ? `<div class="doc-files">${docThumbs(src, "hkid")}</div>` : ""}
+      <p class="tiny muted" style="margin:0.8rem 0 0">${tr("doc.privacy")}</p>
+    </section>`;
+}
+
+function docViewerHtml() {
+  const v = ui.docView;
+  if (!v) return "";
+  const d = docList(v.src, v.type)[v.idx];
+  if (!d) return "";
+  const title = tr(`doc.kind.${v.type}`);
+  const body =
+    d.type === "application/pdf"
+      ? `<div class="viewer-pdf">${icon("doc", { size: 40 })}<p>${escapeHtml(d.name)}</p><a class="btn" href="${v.url || "#"}" target="_blank" rel="noopener" download="${escapeHtml(d.name || "document.pdf")}">${tr("doc.openPdf")}</a></div>`
+      : `<img src="${d.data}" alt="${escapeHtml(title)}">`;
+  return `<div class="viewer" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+    <div class="viewer-bar"><strong>${escapeHtml(title)}</strong><button type="button" class="btn secondary small" data-action="doc-close">${tr("common.close")}</button></div>
+    <div class="viewer-body">${body}</div>
+  </div>`;
 }
 
 function viewHome() {
@@ -669,9 +902,11 @@ function viewHome() {
   const start = h.contractStart || h.startDate;
   const paidFrom = paidStatutoryStart(h.startDate || h.contractStart);
   const vest = annualLeaveVestDate(h.startDate || h.contractStart);
-  const reminders = buildReminders(h, t, { arrangedRestDays: arrangedFor(h) }).filter((r) =>
-    isReminderVisible(r, state.reminderState, t)
-  );
+  const soonLimit = toISO(addDays(t, 30));
+  const reminders = mergeReminders(
+    buildReminders(h, t, { arrangedRestDays: arrangedFor(h) }),
+    buildCustomReminders(state.customReminders, state.helpers, t, { helperId: h.id }).filter((r) => r.date <= soonLimit)
+  ).filter((r) => isReminderVisible(r, state.reminderState, t));
   const year = ui.year;
   const yearList = holidayList(h, year);
   const shCount = holidayList(h, year).filter((d) => d.kind === "statutory").length;
@@ -745,6 +980,10 @@ function viewHome() {
         ${timelineHtml(reminders.slice(0, 4), "remind")}
       </div>
     </section>
+
+    ${menuHomeCard()}
+
+    ${idDocsPanel(h, "stored")}
 
     <section class="panel">
       <div class="panel-title">
@@ -830,7 +1069,7 @@ function viewLeave() {
   `;
 }
 
-function monthGrid(year, month, marks, interactive) {
+function monthGrid(year, month, marks, interactive, action = "cal-day") {
   const first = new Date(year, month, 1);
   const start = first.getDay();
   const dim = daysInMonth(year, month);
@@ -847,16 +1086,22 @@ function monthGrid(year, month, marks, interactive) {
       mark.gh ? "is-gh" : "",
       mark.rest ? "is-rest" : "",
       mark.annual ? "is-annual" : "",
+      mark.shopOpen || mark.shopDone ? "has-shop" : "",
+      action === "shop-day" && ui.shopDay === iso ? "is-selected" : "",
     ]
       .filter(Boolean)
       .join(" ");
-    const label = `${iso}${mark.rest ? tr("cal.aria.rest") : ""}${mark.sh ? tr("cal.aria.sh") : ""}${mark.annual ? tr("cal.aria.annual") : ""}`;
+    const shopN = (mark.shopOpen || 0) + (mark.shopDone || 0);
+    const shopHtml = shopN
+      ? `<span class="shop-marks">${mark.shopOpen ? '<i class="sd open"></i>' : ""}${mark.shopDone ? '<i class="sd done"></i>' : ""}</span>${shopN > 1 ? `<b class="scount">${shopN}</b>` : ""}`
+      : "";
+    const label = `${iso}${shopN ? tr("shop.cal.aria", { n: shopN }) : ""}${mark.rest ? tr("cal.aria.rest") : ""}${mark.sh ? tr("cal.aria.sh") : ""}${mark.annual ? tr("cal.aria.annual") : ""}`;
     if (interactive) {
       cells.push(
-        `<button class="${cls}" type="button" data-action="cal-day" data-date="${iso}" aria-label="${label}">${d}</button>`
+        `<button class="${cls}" type="button" data-action="${action}" data-date="${iso}" aria-label="${label}">${d}${shopHtml}</button>`
       );
     } else {
-      cells.push(`<div class="${cls}" aria-label="${label}">${d}</div>`);
+      cells.push(`<div class="${cls}" aria-label="${label}">${d}${shopHtml}</div>`);
     }
   }
   const dow = WEEKDAYS.map((w) => `<div class="dow">${pick(w, "shortZh", "shortEn")}</div>`).join("");
@@ -1130,6 +1375,241 @@ function monthPaySnapshot(h, iso) {
   return { total, label, wage, food, full };
 }
 
+
+/* ---------- pay records: consent, signature, payslip ---------- */
+
+const PAY_METHODS = ["cash", "bank", "cheque", "other"];
+
+function payTotal(p) {
+  return Number(p.wage || 0) + Number(p.food || 0) + Number(p.adjustments || 0);
+}
+
+function fmtDateTime(iso) {
+  const d = new Date(iso);
+  if (!iso || Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${formatDate(day)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function methodLabel(m) {
+  return PAY_METHODS.includes(m) ? tr(`pay.method.${m}`) : "";
+}
+
+/** Consent for a payment as seen by the current role (helper: local confirmations override). */
+function consentOf(p, shareId) {
+  if (p.consent?.status === "confirmed") return p.consent;
+  if (shareId) {
+    const at = payConsentMap(shareId)[p.id];
+    if (at) return { status: "confirmed", at, by: "helper-device", signature: "" };
+  }
+  return null;
+}
+
+function consentBadge(c) {
+  if (!c) return `<span class="consent-badge pending">${tr("consent.pending")}</span>`;
+  const how = c.by === "in-person" ? tr("consent.by.inPerson") : tr("consent.by.helper");
+  return `<span class="consent-badge ok">${icon("check", { size: 14 })}${tr("consent.confirmed")}</span><span class="consent-when">${escapeHtml(fmtDateTime(c.at))}${tr("log.sep")}${how}</span>`;
+}
+
+function payRecordRows() {
+  const h = helper();
+  const pays = state.payments.filter((p) => p.helperId === h.id).slice().reverse();
+  if (!pays.length) return `<p class="muted" style="margin:0">${tr("pay.none")}</p>`;
+  return pays
+    .map((p) => {
+      const c = consentOf(p, "");
+      return `<div class="row pay-row">
+        <div class="grow">
+          <div class="title">${escapeHtml(p.month || "—")}${tr("log.sep")}${formatMoney(payTotal(p))}</div>
+          <div class="sub">${p.paidOn ? formatDate(p.paidOn, { short: true }) : tr("pay.noPaidOn")}${methodLabel(p.method) ? tr("log.sep") + methodLabel(p.method) : ""}${p.note ? tr("log.sep") + escapeHtml(p.note) : ""}</div>
+          <div class="consent-line">${consentBadge(c)}</div>
+          <div class="pay-actions">
+            ${
+              c
+                ? `<button class="btn secondary small" type="button" data-action="consent-clear" data-id="${p.id}">${tr("consent.clear")}</button>`
+                : `<button class="btn small" type="button" data-action="consent-open" data-id="${p.id}">${tr("consent.open")}</button>`
+            }
+            <button class="btn secondary small" type="button" data-action="payslip-open" data-id="${p.id}">${icon("download", { size: 15 })} ${tr("payslip.export")}</button>
+          </div>
+        </div>
+        <button class="icon-btn" type="button" data-action="pay-del" data-id="${p.id}" aria-label="${tr("common.delete")}">${icon("close", { size: 18 })}</button>
+      </div>`;
+    })
+    .join("");
+}
+
+function consentSheetBody(sheet) {
+  const h = helper();
+  const p = state.payments.find((x) => x.id === sheet.payId);
+  if (!p || !h) return "";
+  return `
+    <h2>${tr("consent.sheet.title")}</h2>
+    <p class="lede" style="margin-bottom:0.7rem">${tr("consent.sheet.lede", { name: escapeHtml(h.name) })}</p>
+    <div class="consent-summary">
+      ${detailRow(tr("payslip.helper"), escapeHtml(h.name))}
+      ${detailRow(tr("payslip.period"), escapeHtml(p.month || "—"))}
+      ${detailRow(tr("sheet.pay.wage"), formatMoney(p.wage))}
+      ${Number(p.food) ? detailRow(tr("sheet.pay.food"), formatMoney(p.food)) : ""}
+      ${Number(p.adjustments) ? detailRow(tr("sheet.pay.adjust") + (p.note ? `（${escapeHtml(p.note)}）` : ""), formatMoney(p.adjustments)) : ""}
+      ${detailRow(tr("payslip.total"), `<b>${formatMoney(payTotal(p))}</b>`)}
+      ${p.paidOn ? detailRow(tr("sheet.pay.paidOn"), formatDate(p.paidOn)) : ""}
+    </div>
+    <form id="consent-form" data-pay="${escapeHtml(p.id)}">
+      <label class="switch-field">
+        <span><strong>${tr("consent.agree")}</strong></span>
+        <span class="switch"><input type="checkbox" name="agree"><span></span></span>
+      </label>
+      <div class="sig-wrap">
+        <div class="sig-head"><span>${tr("consent.sign")}</span><button class="linkish" type="button" data-action="sig-clear">${tr("consent.sig.clear")}</button></div>
+        <canvas id="sig-pad" class="sig-pad" aria-label="${tr("consent.sign")}"></canvas>
+        <p class="tiny muted" style="margin:0.3rem 0 0">${tr("consent.sign.hint")}</p>
+      </div>
+      <p class="consent-err" id="consent-err" role="alert" hidden></p>
+      <div class="btn-row"><button class="btn" type="submit">${tr("consent.save")}</button></div>
+    </form>`;
+}
+
+function setupSignaturePad() {
+  const cv = document.getElementById("sig-pad");
+  if (!cv) return;
+  const rect = cv.getBoundingClientRect();
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.max(10, Math.round(rect.width * dpr));
+  cv.height = Math.max(10, Math.round(rect.height * dpr));
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#202b27";
+  if (ui.sigData) {
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
+    img.src = ui.sigData;
+  }
+  let drawing = false;
+  const pt = (e) => {
+    const r = cv.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  };
+  cv.addEventListener("pointerdown", (e) => {
+    drawing = true;
+    cv.setPointerCapture?.(e.pointerId);
+    const [x, y] = pt(e);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + 0.1, y + 0.1);
+    ctx.stroke();
+    e.preventDefault();
+  });
+  cv.addEventListener("pointermove", (e) => {
+    if (!drawing) return;
+    const [x, y] = pt(e);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    e.preventDefault();
+  });
+  const end = () => {
+    if (!drawing) return;
+    drawing = false;
+    ui.sigData = cv.toDataURL("image/png");
+  };
+  cv.addEventListener("pointerup", end);
+  cv.addEventListener("pointercancel", end);
+}
+
+/** Small white-background PNG of the signature (keeps storage and print light). */
+function compressSignature() {
+  const cv = document.getElementById("sig-pad");
+  if (!cv) return "";
+  const w = 480;
+  const h = Math.max(1, Math.round((cv.height / cv.width) * w));
+  const out = document.createElement("canvas");
+  out.width = w;
+  out.height = h;
+  const ctx = out.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(cv, 0, 0, w, h);
+  return out.toDataURL("image/png");
+}
+
+function viewPayExtras() {
+  const h = helper();
+  const access = h ? state.helperAccess[h.id] : null;
+  return `
+    <section class="panel" style="margin-top:0.9rem">
+      <div class="panel-title"><h2>${tr("pay.employerName")}</h2></div>
+      <label class="field" style="margin:0"><span class="hint">${tr("pay.employerName.hint")}</span>
+        <input data-action="employer-name" maxlength="80" autocomplete="name" value="${escapeHtml(state.settings.employerName || "")}">
+      </label>
+    </section>
+    <section class="panel">
+      <div class="panel-title"><h2>${tr("consent.import.title")}</h2></div>
+      <p class="tiny muted" style="margin:0 0 0.5rem">${tr("consent.import.hint")}${access && !access.revoked ? "" : tr("consent.import.needShare")}</p>
+      <textarea id="return-code" rows="3" placeholder="${tr("consent.import.ph")}"></textarea>
+      <div class="btn-row"><button class="btn secondary" type="button" data-action="import-return">${tr("consent.import.btn")}</button></div>
+      ${ui.returnMsg ? `<p class="note-box" style="margin:0.6rem 0 0">${escapeHtml(ui.returnMsg)}</p>` : ""}
+    </section>`;
+}
+
+function payslipHtml() {
+  if (!ui.payslipId || role === "helper") return "";
+  const h = helper();
+  const p = state.payments.find((x) => x.id === ui.payslipId);
+  if (!h || !p) return "";
+  const c = consentOf(p, "");
+  const blank = `<span class="blank-line"></span>`;
+  const rows = [
+    [tr("sheet.pay.wage"), formatMoney(p.wage)],
+    [tr("sheet.pay.food"), Number(p.food) ? formatMoney(p.food) : h.foodProvided ? tr("payslip.foodInKind") : formatMoney(0)],
+  ];
+  if (Number(p.adjustments)) rows.push([tr("payslip.adjust") + (p.note ? `（${escapeHtml(p.note)}）` : ""), formatMoney(p.adjustments)]);
+  return `<div class="payslip-layer" role="dialog" aria-modal="true" aria-label="${tr("payslip.title")}">
+    <div class="payslip-bar">
+      <button type="button" class="btn secondary small" data-action="payslip-close">${tr("common.close")}</button>
+      <button type="button" class="btn small" data-action="payslip-print">${icon("download", { size: 15 })} ${tr("payslip.print")}</button>
+    </div>
+    <p class="payslip-hint">${tr("payslip.hint")}</p>
+    <article class="payslip">
+      <header class="ps-head">
+        <div><div class="ps-app">${tr("app.name")}</div><h1>${tr("payslip.title")}</h1></div>
+        <div class="ps-period">${escapeHtml(p.month || "—")}</div>
+      </header>
+      <table class="ps-meta">
+        <tr><th>${tr("payslip.employer")}</th><td>${state.settings.employerName ? escapeHtml(state.settings.employerName) : blank}</td></tr>
+        <tr><th>${tr("payslip.helper")}</th><td>${escapeHtml(h.name)}</td></tr>
+        ${h.passportNo ? `<tr><th>${tr("form.passportNo")}</th><td>${escapeHtml(maskPassport(h.passportNo))}</td></tr>` : ""}
+        ${h.hkidNo ? `<tr><th>${tr("form.hkidNo")}</th><td>${escapeHtml(maskHkid(h.hkidNo))}</td></tr>` : ""}
+        <tr><th>${tr("payslip.period")}</th><td>${escapeHtml(p.month || "—")}</td></tr>
+        <tr><th>${tr("sheet.pay.paidOn")}</th><td>${p.paidOn ? formatDate(p.paidOn) : blank}</td></tr>
+        <tr><th>${tr("payslip.method")}</th><td>${methodLabel(p.method) || blank}</td></tr>
+      </table>
+      <table class="ps-items">
+        <thead><tr><th>${tr("payslip.item")}</th><th class="num">${tr("payslip.amount")}</th></tr></thead>
+        <tbody>
+          ${rows.map(([k, v]) => `<tr><td>${k}</td><td class="num">${v}</td></tr>`).join("")}
+        </tbody>
+        <tfoot><tr><td>${tr("payslip.total")}</td><td class="num">${formatMoney(payTotal(p))}</td></tr></tfoot>
+      </table>
+      <section class="ps-consent">
+        <h2>${tr("payslip.consent")}</h2>
+        ${
+          c
+            ? `<p class="ps-ok">${tr("consent.confirmed")}</p><p>${escapeHtml(fmtDateTime(c.at))}${tr("log.sep")}${c.by === "in-person" ? tr("consent.by.inPerson") : tr("consent.by.helper")}</p>`
+            : `<p class="ps-pending">${tr("consent.pending")}</p>`
+        }
+      </section>
+      <div class="ps-sign">
+        <div><div class="sign-box"></div><div class="sign-label">${tr("payslip.signEmployer")}</div></div>
+        <div><div class="sign-box">${c?.signature ? `<img src="${c.signature}" alt="${tr("payslip.signHelper")}">` : ""}</div><div class="sign-label">${tr("payslip.signHelper")}</div></div>
+      </div>
+      <p class="ps-foot">${tr("payslip.foot")}</p>
+    </article>
+  </div>`;
+}
+
 function viewPay() {
   const h = helper();
   if (!h) return emptyHelperPrompt(tr("leave.empty.title"));
@@ -1160,24 +1640,10 @@ function viewPay() {
     <section class="section">
       <div class="section-head"><h2>${tr("pay.history")}</h2></div>
       <div class="card">
-        ${
-          pays.length
-            ? pays
-                .map((p) => {
-                  const sum = Number(p.wage || 0) + Number(p.food || 0) + Number(p.adjustments || 0);
-                  return `<div class="row">
-                    <div class="grow">
-                      <div class="title">${escapeHtml(p.month || "—")}${tr("log.sep")}${formatMoney(sum)}</div>
-                      <div class="sub">${p.paidOn ? formatDate(p.paidOn, { short: true }) : tr("pay.noPaidOn")}${p.note ? tr("log.sep") + escapeHtml(p.note) : ""}</div>
-                    </div>
-                    <button class="icon-btn" type="button" data-action="pay-del" data-id="${p.id}" aria-label="${tr("common.delete")}">${icon("close", { size: 18 })}</button>
-                  </div>`;
-                })
-                .join("")
-            : `<p class="muted" style="margin:0">${tr("pay.none")}</p>`
-        }
+        ${payRecordRows()}
       </div>
     </section>
+    ${viewPayExtras()}
     <p class="tiny muted">${tr("pay.mawHistory", { list: MAW_HISTORY.map((m) => tr("pay.mawFrom", { date: displayISO(m.effectiveFrom), wage: formatMoney(m.wage) })).join(tr("semi")) })}</p>
     ${disclaimer()}
   `;
@@ -1187,13 +1653,20 @@ function viewRemind() {
   const h = helper();
   if (!h) return emptyHelperPrompt(tr("leave.empty.title"));
   const t = today();
-  const all = state.helpers.flatMap((x) => buildReminders(x, t, { arrangedRestDays: arrangedFor(x) }));
+  const all = mergeReminders(
+    state.helpers.flatMap((x) => buildReminders(x, t, { arrangedRestDays: arrangedFor(x) })),
+    buildCustomReminders(state.customReminders, state.helpers, t)
+  );
   const visible = all.filter((r) => isReminderVisible(r, state.reminderState, t));
   const hidden = all.filter((r) => !isReminderVisible(r, state.reminderState, t));
+  const doneCustom = state.customReminders.filter((r) => r.doneAt);
   return `
     ${helperSwitcher()}
     <h1 class="screen-title">${tr("home.reminders")}</h1>
     <p class="lede">${tr("remind.lede")}</p>
+    <div class="btn-row" style="margin-bottom:0.8rem">
+      <button class="btn" type="button" data-action="reminder-new">${icon("plus", { size: 18 })} ${tr("remind.new")}</button>
+    </div>
     <div class="card">
       <label class="switch-field">
         <span>
@@ -1215,12 +1688,13 @@ function viewRemind() {
                   (r) => `
           <div class="row">
             <div class="grow">
-              <div class="title">${escapeHtml(r.title)}</div>
-              <div class="sub">${formatDate(r.date)}${state.helpers.length > 1 ? tr("log.sep") + escapeHtml(r.helperName) : ""}</div>
-              <p class="tiny muted" style="margin:0.35rem 0 0">${escapeHtml(r.body)}</p>
+              <div class="title">${escapeHtml(r.title)}${r.type === "custom" ? ` <span class="tag brass">${tr("remind.custom")}</span>` : ""}</div>
+              <div class="sub">${formatDate(r.date)}${r.type === "custom" && r.repeat !== "none" ? tr("log.sep") + tr(`remind.repeat.${r.repeat}`) : ""}${state.helpers.length > 1 && r.helperName ? tr("log.sep") + escapeHtml(r.helperName) : ""}</div>
+              ${r.body ? `<p class="tiny muted" style="margin:0.35rem 0 0">${escapeHtml(r.body)}</p>` : ""}
               <div class="btn-row" style="margin-top:0.45rem">
                 <button class="btn secondary" type="button" data-action="remind-snooze" data-id="${r.id}" style="min-height:2.4rem">${tr("remind.snooze")}</button>
                 <button class="btn ghost" type="button" data-action="remind-done" data-id="${r.id}" style="min-height:2.4rem">${tr("remind.done")}</button>
+                ${r.type === "custom" ? `<button class="btn ghost" type="button" data-action="reminder-edit" data-id="${r.customId}" style="min-height:2.4rem">${tr("common.edit")}</button>` : ""}
               </div>
             </div>
             <span class="status-pill ${r.urgency}">${urgencyWord(r.urgency)}</span>
@@ -1234,6 +1708,20 @@ function viewRemind() {
     ${
       hidden.length
         ? `<p class="tiny muted">${tr("remind.hidden", { n: hidden.length })}</p>`
+        : ""
+    }
+    ${
+      doneCustom.length
+        ? `<section class="section">
+            <div class="section-head"><h2>${tr("remind.doneList")}</h2></div>
+            <div class="card">${doneCustom
+              .map(
+                (r) => `<div class="row"><div class="grow"><div class="title">${escapeHtml(r.title)}</div><div class="sub">${tr("remind.doneOn", { date: fmtDateTime(r.doneAt) })}</div></div>
+                  <button class="btn ghost small" type="button" data-action="reminder-restore" data-id="${r.id}">${tr("remind.restore")}</button>
+                  <button class="icon-btn" type="button" data-action="reminder-del" data-id="${r.id}" aria-label="${tr("common.delete")}">${icon("close", { size: 18 })}</button></div>`
+              )
+              .join("")}</div>
+          </section>`
         : ""
     }
   `;
@@ -1311,10 +1799,118 @@ function viewRules() {
   `;
 }
 
+
+/* ---------- shopping lists: dates, calendar, price history ---------- */
+
+function listDateLabel(list) {
+  const d = listDate(list);
+  return d ? formatDate(d, { short: true }) : "";
+}
+
+function shopMarks(lists) {
+  const marks = {};
+  for (const l of lists) {
+    const d = listDate(l);
+    if (!d) continue;
+    const m = (marks[d] = marks[d] || { shopOpen: 0, shopDone: 0 });
+    if (l.status === "done") m.shopDone += 1;
+    else m.shopOpen += 1;
+  }
+  return marks;
+}
+
+function shopRow(list, items, detailTab) {
+  const bought = items.filter((i) => i.bought).length;
+  return `<button class="row" type="button" data-go="${detailTab}" data-list="${list.id}">
+    <div class="grow">
+      <div class="title">${escapeHtml(list.title || placeLabel(list.place))}</div>
+      <div class="sub">${listDateLabel(list)}${tr("log.sep")}${placeLabel(list.place)}${tr("log.sep")}${items.length ? tr("shop.progress", { done: bought, total: items.length }) : tr("shop.noItems")}</div>
+    </div>
+    <span class="status-pill ${list.status === "done" ? "" : "watch"}">${list.status === "done" ? tr("shop.status.done") : tr("shop.status.open")}</span>
+  </button>`;
+}
+
+function shopBrowser(lists, itemsOf, detailTab, emptyKey) {
+  const byDate = (a, b) => listDate(b).localeCompare(listDate(a)) || (b.createdAt || "").localeCompare(a.createdAt || "");
+  const sorted = lists.slice().sort(byDate);
+  const seg = `<div class="seg" role="group" aria-label="${tr("shop.title")}">
+    <button type="button" class="seg-btn ${ui.shopView === "list" ? "is-on" : ""}" data-action="shop-view" data-view="list" aria-pressed="${ui.shopView === "list"}">${tr("shop.view.list")}</button>
+    <button type="button" class="seg-btn ${ui.shopView === "cal" ? "is-on" : ""}" data-action="shop-view" data-view="cal" aria-pressed="${ui.shopView === "cal"}">${tr("shop.view.cal")}</button>
+  </div>`;
+  if (ui.shopView !== "cal") {
+    return `${seg}<div class="card" style="margin-top:0.9rem">${
+      sorted.length ? sorted.map((l) => shopRow(l, itemsOf(l.id), detailTab)).join("") : `<p class="muted" style="margin:0">${tr(emptyKey)}</p>`
+    }</div>`;
+  }
+  const { year, month } = ui.shopCal;
+  const day = ui.shopDay;
+  const dayLists = day ? sorted.filter((l) => listDate(l) === day) : [];
+  return `${seg}
+    <div class="card" style="margin-top:0.9rem">
+      <div class="month-nav">
+        <button class="icon-btn" type="button" data-action="shop-month" data-d="-1" aria-label="${tr("month.prev")}">${icon("back")}</button>
+        <strong>${formatMonthYear(year, month)}</strong>
+        <button class="icon-btn" type="button" data-action="shop-month" data-d="1" aria-label="${tr("month.next")}">${icon("chevron")}</button>
+      </div>
+      ${monthGrid(year, month, shopMarks(lists), true, "shop-day")}
+      <div class="cal-legend">
+        <span><i class="sd open"></i>${tr("shop.cal.open")}</span>
+        <span><i class="sd done"></i>${tr("shop.cal.done")}</span>
+        <span><i class="today"></i>${tr("cal.legend.today")}</span>
+      </div>
+    </div>
+    ${
+      day
+        ? `<section class="section" data-shop-day-panel>
+            <div class="section-head"><h2>${tr("shop.day.title", { date: formatDate(day, { weekday: true }) })}</h2></div>
+            <div class="card">${
+              dayLists.length
+                ? dayLists.map((l) => shopRow(l, itemsOf(l.id), detailTab)).join("")
+                : `<p class="muted" style="margin:0">${tr("shop.day.none")}</p>`
+            }</div>
+            ${role !== "helper" ? `<div class="btn-row"><button class="btn secondary" type="button" data-action="shop-new" data-date="${day}">${tr("shop.day.new")}</button></div>` : ""}
+          </section>`
+        : `<p class="tiny muted" style="margin-top:0.6rem">${tr("shop.cal.hint")}</p>`
+    }`;
+}
+
+function priceHistoryHtml(row, source) {
+  const hist = (row?.history?.length ? row.history : row ? [{ price: row.lastPrice, date: row.lastPaidOn, place: "" }] : [])
+    .slice()
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  if (!hist.length) return `<p class="muted" style="margin:0">${tr("shop.hist.none")}</p>`;
+  return `<ul class="hist-list">${hist
+    .map((e) => {
+      const lst = source !== "session" && e.listId ? state.shopLists.find((l) => l.id === e.listId) : null;
+      const where = [e.place ? placeLabel(e.place) : "", lst?.title || ""].filter(Boolean).join(tr("log.sep"));
+      return `<li><span>${e.date ? formatDate(e.date, { short: true }) : "—"}</span><b>${formatMoney(e.price)}</b><em>${escapeHtml(where)}</em></li>`;
+    })
+    .join("")}</ul>`;
+}
+
+function lastPriceText(cat) {
+  return tr("shop.lastPrice", { price: formatMoney(cat.lastPrice), date: cat.lastPaidOn ? tr("shop.lastPrice.date", { date: formatDate(cat.lastPaidOn, { short: true }) }) : "" });
+}
+
+/** Inline hint inside the item form: last price + tap to see history. */
+function itemHintBlock(cat) {
+  if (!cat) return `<p class="price-hint">${tr("sheet.item.suggestEmpty")}</p>`;
+  return `<button type="button" class="price-hint price-hint-btn" data-action="price-hist-toggle">${lastPriceText(cat)} <span class="hist-link">${tr("shop.hist.link")}</span></button>
+    <div class="price-hist" hidden>${priceHistoryHtml(cat, "stored")}</div>`;
+}
+
+function catalogNameOptions() {
+  const names = new Map();
+  for (const c of state.priceCatalog || []) names.set(catalogKey(c.name), c.name);
+  for (const it of state.shopItems || []) if (it.name && !names.has(catalogKey(it.name))) names.set(catalogKey(it.name), it.name);
+  return Array.from(names.values())
+    .map((n) => `<option value="${escapeHtml(n)}">`)
+    .join("");
+}
+
 function viewShop() {
   const h = helper();
   if (!h) return emptyHelperPrompt(tr("leave.empty.title"));
-  const lists = listsFor(h).slice().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   return `
     ${helperSwitcher()}
     <h1 class="screen-title">${tr("shop.title")}</h1>
@@ -1322,25 +1918,7 @@ function viewShop() {
     <div class="btn-row">
       <button class="btn" type="button" data-action="shop-new">${tr("shop.new")}</button>
     </div>
-    <div class="card" style="margin-top:0.9rem">
-      ${
-        lists.length
-          ? lists
-              .map((list) => {
-                const items = itemsForList(list.id);
-                const bought = items.filter((i) => i.bought).length;
-                return `<button class="row" type="button" data-go="shop-detail" data-list="${list.id}">
-                  <div class="grow">
-                    <div class="title">${escapeHtml(list.title || placeLabel(list.place))}</div>
-                    <div class="sub">${placeLabel(list.place)}${tr("log.sep")}${items.length ? tr("shop.progress", { done: bought, total: items.length }) : tr("shop.noItems")}</div>
-                  </div>
-                  <span class="status-pill ${list.status === "done" ? "" : "watch"}">${list.status === "done" ? tr("shop.status.done") : tr("shop.status.open")}</span>
-                </button>`;
-              })
-              .join("")
-          : `<p class="muted" style="margin:0">${tr("shop.none")}</p>`
-      }
-    </div>
+    <div style="margin-top:0.9rem">${shopBrowser(listsFor(h), itemsForList, "shop-detail", "shop.none")}</div>
   `;
 }
 
@@ -1356,7 +1934,10 @@ function viewShopDetail() {
   return `
     <button class="linkish back-row" type="button" data-go="shop">${tr("shop.back")}</button>
     <h1 class="screen-title">${escapeHtml(list.title || placeLabel(list.place))}</h1>
-    <p class="lede">${placeLabel(list.place)}${list.note ? tr("log.sep") + escapeHtml(list.note) : ""}${tr("shop.detail.lede")}</p>
+    <p class="lede">${listDateLabel(list)}${tr("log.sep")}${placeLabel(list.place)}${list.note ? tr("log.sep") + escapeHtml(list.note) : ""}${tr("shop.detail.lede")}</p>
+    <label class="field" style="max-width:16rem"><span>${tr("shop.date")}</span>
+      <input type="date" data-action="list-date" data-list="${list.id}" value="${escapeHtml(listDate(list))}">
+    </label>
     <div class="btn-row">
       <button class="btn" type="button" data-action="item-new" data-list="${list.id}">${tr("shop.addItem")}</button>
       ${
@@ -1372,7 +1953,7 @@ function viewShopDetail() {
               .map((item) => {
                 const cat = findCatalog(state, item.name);
                 const hint = cat
-                  ? tr("shop.lastPrice", { price: formatMoney(cat.lastPrice), date: cat.lastPaidOn ? tr("shop.lastPrice.date", { date: formatDate(cat.lastPaidOn, { short: true }) }) : "" })
+                  ? `<button type="button" class="price-hint-btn" data-action="price-history" data-key="${escapeHtml(cat.key)}">${lastPriceText(cat)} <span class="hist-link">${tr("shop.hist.link")}</span></button>`
                   : "";
                 return `<div class="shop-item">
                   <div class="thumb">${item.photo ? `<img src="${item.photo}" alt="">` : icon("image", { size: 22 })}</div>
@@ -1405,29 +1986,54 @@ async function generateShare() {
   if (!h) return toast(tr("toast.addHelperFirst"));
   const pin = randomPin();
   const shareId = uid("share");
-  const payload = buildSharePayload({
-    helper: h,
-    arrangedRestDays: arrangedFor(h),
-    leaveLogs: state.leaveLogs,
-    shStatuses: state.shStatuses,
-    payments: state.payments,
-    workTasks: state.workTasks,
-    workRules: state.workRules,
-    shopLists: state.shopLists,
-    shopItems: state.shopItems,
-    priceCatalog: state.priceCatalog,
-  });
-  payload.shareId = shareId;
+  const withDocs = Boolean(ui.shareDocs && hasIdInfo(h));
+  const shareDocs = withDocs ? await docsForShare(h.docs) : null;
+  if (withDocs && docsChars(shareDocs) > MAX_SHARE_DOC_CHARS) {
+    return toast(tr("share.docs.tooBig"));
+  }
+  const menuShare = menuForShare(state.menu, shiftISO(today(), -SHARE_MENU_PAST_DAYS), shiftISO(today(), SHARE_MENU_FUTURE_DAYS));
+  let recipesShare = await recipesForShare(state.recipes);
+  let photosDropped = false;
+  const makePayload = (recipes) => {
+    const p = buildSharePayload({
+      includeDocs: withDocs,
+      docs: shareDocs,
+      helper: h,
+      arrangedRestDays: arrangedFor(h),
+      leaveLogs: state.leaveLogs,
+      shStatuses: state.shStatuses,
+      payments: state.payments,
+      workTasks: state.workTasks,
+      workRules: state.workRules,
+      shopLists: state.shopLists,
+      shopItems: state.shopItems,
+      priceCatalog: state.priceCatalog,
+      customReminders: state.customReminders,
+      menu: menuShare,
+      recipes,
+    });
+    p.shareId = shareId;
+    return p;
+  };
+  let payload = makePayload(recipesShare);
   let packed;
   try {
     packed = await encryptShare(payload, pin);
+    const base = withDocs ? docsChars(shareDocs) * 1.4 : 0;
+    if (packed.length > base + 400000 && recipesShare.some((r) => r.photo)) {
+      photosDropped = true;
+      recipesShare = recipesShare.map((r) => ({ ...r, photo: "" }));
+      payload = makePayload(recipesShare);
+      packed = await encryptShare(payload, pin);
+    }
   } catch (err) {
     console.warn(err);
     return toast(tr("toast.shareFailed"));
   }
   state.helperAccess[h.id] = {
     shareId,
-    packed,
+    packed: withDocs || packed.length > 120000 ? "" : packed,
+    withDocs,
     generatedAt: payload.generatedAt,
     revoked: false,
     helperName: h.name,
@@ -1440,10 +2046,12 @@ async function generateShare() {
     generatedAt: payload.generatedAt,
     label: h.name,
   });
-  ui.shareReveal = { pin, packed, url: shareUrl(packed), helperName: h.name, shareId };
+  ui.shareReveal = { pin, packed, url: shareUrl(packed), helperName: h.name, shareId, withDocs };
+  ui.shareDocs = false;
   ui.tab = "share";
   location.hash = "#/share";
   render();
+  if (photosDropped) toast(tr("toast.sharePhotosDropped"));
 }
 
 function viewShare() {
@@ -1455,6 +2063,13 @@ function viewShare() {
     ${helperSwitcher()}
     <h1 class="screen-title">${tr("share.title")}</h1>
     <p class="lede">${tr("share.lede")}</p>
+    <div class="card" style="margin-bottom:0.8rem">
+      <label class="switch-field">
+        <span><strong>${tr("share.docs.label")}</strong><span class="hint">${hasIdInfo(h) ? tr("share.docs.hint") : tr("share.docs.none")}</span></span>
+        <span class="switch"><input type="checkbox" data-action="toggle-share-docs" ${ui.shareDocs && hasIdInfo(h) ? "checked" : ""} ${hasIdInfo(h) ? "" : "disabled"}><span></span></span>
+      </label>
+    </div>
+    <p class="tiny muted" style="margin:0 0 0.8rem">${tr("share.menuNote")}</p>
     ${
       reveal
         ? `<div class="card">
@@ -1469,6 +2084,7 @@ function viewShare() {
                   : `<button class="btn secondary" type="button" data-action="copy-packed">${tr("share.copyPacked")}</button>`
               }
             </div>
+            ${reveal.withDocs ? `<p class="note-box" style="margin:0.8rem 0 0">${tr("share.docs.included")}</p>` : ""}
             <p class="tiny muted" style="margin:0.8rem 0 0.3rem">${tr("share.fileHint")}</p>
             <div class="share-box"><textarea id="share-packed" readonly rows="6">${escapeHtml(reveal.packed)}</textarea></div>
           </div>`
@@ -1502,6 +2118,8 @@ function viewMore() {
       <button class="row" type="button" data-go="tasks"><div class="grow"><div class="title">${tr("tab.tasks")}</div><div class="sub">${tr("more.tasks.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="rules"><div class="grow"><div class="title">${tr("tab.rules")}</div><div class="sub">${tr("more.rules.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="shop"><div class="grow"><div class="title">${tr("shop.title")}</div><div class="sub">${tr("more.shop.sub")}</div></div>${icon("chevron")}</button>
+      <button class="row" type="button" data-go="menu"><div class="grow"><div class="title">${tr("menu.title")}</div><div class="sub">${tr("more.menu.sub")}</div></div>${icon("chevron")}</button>
+      <button class="row" type="button" data-go="recipes"><div class="grow"><div class="title">${tr("recipe.title")}</div><div class="sub">${tr("more.recipes.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="share"><div class="grow"><div class="title">${tr("share.generate")}</div><div class="sub">${tr("more.share.sub")}</div></div>${icon("chevron")}</button>
       ${
         h
@@ -1566,6 +2184,7 @@ function viewBackup() {
 
 function viewHelperForm(mode) {
   const editing = mode === "edit" ? helper() : null;
+  ensureDocDraft(mode, editing);
   const form = editing || {
     name: "",
     nationality: "philippines",
@@ -1632,6 +2251,12 @@ function viewHelperForm(mode) {
       <label class="field"><span>${tr("form.passport")}</span>
         <input type="date" name="passportExpiry" value="${escapeHtml(form.passportExpiry || "")}">
       </label>
+      <section class="doc-section">
+        <h2>${tr("doc.section.title")}</h2>
+        ${docEditBlock("passport", "passportNo", form.passportNo, form)}
+        ${docEditBlock("hkid", "hkidNo", form.hkidNo, form)}
+        <p class="note-box" style="margin:0.6rem 0 0">${tr("doc.privacy")}</p>
+      </section>
       <label class="field"><span>${tr("form.notes")}<span class="hint">${tr("form.notes.hint")}</span></span>
         <textarea name="notes" maxlength="2000">${escapeHtml(form.notes || "")}</textarea>
       </label>
@@ -1658,7 +2283,10 @@ function helperReminderList() {
   const p = sessionPayload();
   if (!p?.helper) return [];
   const h = { ...p.helper };
-  return buildReminders(h, today(), { arrangedRestDays: p.arrangedRestDays || [], forHelper: true });
+  return mergeReminders(
+    buildReminders(h, today(), { arrangedRestDays: p.arrangedRestDays || [], forHelper: true }),
+    buildCustomReminders(p.customReminders || [], [h], today())
+  );
 }
 
 function sameDeviceWriteback() {
@@ -1764,6 +2392,8 @@ function viewHelperHome() {
       <div class="panel-title"><h2>${tr("home.reminders")}</h2><button class="linkish" type="button" data-go="h-remind">${tr("common.all")}</button></div>
       ${timelineHtml(reminders, "h-remind")}
     </section>
+    ${menuHomeCard()}
+    ${idDocsPanel(h, "session")}
     <div class="card" style="margin-top:1rem">
       <label class="switch-field">
         <span>
@@ -1961,29 +2591,10 @@ function viewHelperRules() {
 function viewHelperShop() {
   const p = sessionPayload();
   if (!p) return viewHelperEnter();
-  const lists = (p.shopLists || []).slice().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   return `
     <h1 class="screen-title">${tr("shop.title")}</h1>
     <p class="lede">${tr("hshop.lede")}</p>
-    <div class="card">
-      ${
-        lists.length
-          ? lists
-              .map((list) => {
-                const items = (p.shopItems || []).filter((i) => i.listId === list.id);
-                const bought = items.filter((i) => i.bought).length;
-                return `<button class="row" type="button" data-go="h-shop-detail" data-list="${list.id}">
-                  <div class="grow">
-                    <div class="title">${escapeHtml(list.title || placeLabel(list.place))}</div>
-                    <div class="sub">${placeLabel(list.place)}${tr("log.sep")}${items.length ? tr("shop.progress", { done: bought, total: items.length }) : tr("hshop.noItems")}</div>
-                  </div>
-                  <span class="status-pill ${list.status === "done" ? "" : "watch"}">${list.status === "done" ? tr("shop.status.done") : tr("shop.status.open")}</span>
-                </button>`;
-              })
-              .join("")
-          : `<p class="muted" style="margin:0">${tr("hshop.none")}</p>`
-      }
-    </div>
+    ${shopBrowser(p.shopLists || [], (id) => (p.shopItems || []).filter((i) => i.listId === id), "h-shop-detail", "hshop.none")}
   `;
 }
 
@@ -1996,15 +2607,17 @@ function viewHelperShopDetail() {
       <div class="error-state"><h1 class="screen-title">${tr("shop.notFound")}</h1></div>`;
   }
   const items = (p.shopItems || []).filter((i) => i.listId === list.id);
-  const catOf = (name) => (p.priceCatalog || []).find((c) => c.key === String(name || "").trim().toLowerCase());
+  const catOf = (name) => (p.priceCatalog || []).find((c) => c.key === catalogKey(name));
   return `
     <button class="linkish back-row" type="button" data-go="h-shop">${tr("shop.back")}</button>
     <h1 class="screen-title">${escapeHtml(list.title || placeLabel(list.place))}</h1>
-    <p class="lede">${placeLabel(list.place)}${list.note ? tr("log.sep") + escapeHtml(list.note) : ""}${tr("period")}</p>
+    <p class="lede">${listDateLabel(list)}${tr("log.sep")}${placeLabel(list.place)}${list.note ? tr("log.sep") + escapeHtml(list.note) : ""}${tr("period")}</p>
     ${items
       .map((item) => {
         const cat = catOf(item.name);
-        const hint = cat ? tr("hshop.lastPrice", { price: formatMoney(cat.lastPrice) }) : tr("hshop.afterBuy");
+        const hint = cat
+          ? `<button type="button" class="price-hint-btn" data-action="price-history" data-key="${escapeHtml(cat.key)}">${tr("hshop.lastPrice", { price: formatMoney(cat.lastPrice) })} <span class="hist-link">${tr("shop.hist.link")}</span></button>`
+          : tr("hshop.afterBuy");
         return `<div class="shop-item">
           <div class="thumb">${item.photo ? `<img src="${item.photo}" alt="${escapeHtml(item.name)}">` : icon("image", { size: 22 })}</div>
           <div>
@@ -2027,6 +2640,43 @@ function viewHelperShopDetail() {
   `;
 }
 
+function helperPayRecords(p) {
+  const pays = (p.payments || []).slice().sort((a, b) => String(b.month || "").localeCompare(String(a.month || "")));
+  const map = payConsentMap(p.shareId);
+  const mine = Object.keys(map);
+  return `
+    <section class="section">
+      <div class="section-head"><h2>${tr("pay.history")}</h2></div>
+      <div class="card">
+        ${
+          pays.length
+            ? pays
+                .map((x) => {
+                  const c = consentOf(x, p.shareId);
+                  return `<div class="row pay-row"><div class="grow">
+                    <div class="title">${escapeHtml(x.month || "—")}${tr("log.sep")}${formatMoney(payTotal(x))}</div>
+                    <div class="sub">${x.paidOn ? formatDate(x.paidOn, { short: true }) : tr("pay.noPaidOn")}${methodLabel(x.method) ? tr("log.sep") + methodLabel(x.method) : ""}</div>
+                    <div class="consent-line">${consentBadge(c)}</div>
+                    ${c ? "" : `<div class="pay-actions"><button class="btn small" type="button" data-action="h-pay-confirm" data-id="${x.id}">${tr("hpay.confirm")}</button></div>`}
+                  </div></div>`;
+                })
+                .join("")
+            : `<p class="muted" style="margin:0">${tr("hpay.none")}</p>`
+        }
+      </div>
+      ${
+        mine.length
+          ? `<div class="card" style="margin-top:0.8rem">
+              <strong>${tr("hpay.code.title")}</strong>
+              <p class="tiny muted" style="margin:0.3rem 0 0.5rem">${sameDeviceWriteback() ? tr("hpay.code.same") : tr("hpay.code.hint")}</p>
+              <textarea id="return-code-out" rows="3" readonly>${escapeHtml(buildPayReturnCode(p.shareId, map))}</textarea>
+              <div class="btn-row"><button class="btn secondary" type="button" data-action="copy-return">${tr("hpay.code.copy")}</button></div>
+            </div>`
+          : ""
+      }
+    </section>`;
+}
+
 function viewHelperPay() {
   const p = sessionPayload();
   const h = sessionHelper();
@@ -2041,6 +2691,7 @@ function viewHelperPay() {
       <p class="tiny muted" style="margin:0.4rem 0 0">${snap.label}</p>
     </div>
     <div class="note-box" style="margin-top:0.8rem">${tr("hpay.note", { maw: formatMoney(CURRENT_MAW.wage), foodMin: formatMoney(CURRENT_MAW.food) })}</div>
+    ${helperPayRecords(p)}
     ${disclaimer()}
   `;
 }
@@ -2057,9 +2708,9 @@ function viewHelperRemind() {
               .map(
                 (r) => `<div class="row">
                   <div class="grow">
-                    <div class="title">${escapeHtml(r.title)}</div>
-                    <div class="sub">${formatDate(r.date)}</div>
-                    <p class="tiny muted" style="margin:0.35rem 0 0">${escapeHtml(r.body)}</p>
+                    <div class="title">${escapeHtml(r.title)}${r.type === "custom" ? ` <span class="tag brass">${tr("remind.custom")}</span>` : ""}</div>
+                    <div class="sub">${formatDate(r.date)}${r.type === "custom" && r.repeat !== "none" ? tr("log.sep") + tr(`remind.repeat.${r.repeat}`) : ""}</div>
+                    ${r.body ? `<p class="tiny muted" style="margin:0.35rem 0 0">${escapeHtml(r.body)}</p>` : ""}
                   </div>
                   <span class="status-pill ${r.urgency}">${urgencyWord(r.urgency)}</span>
                 </div>`
@@ -2099,6 +2750,8 @@ function viewHelperMore() {
       <button class="row" type="button" data-go="h-tasks"><div class="grow"><div class="title">${tr("tab.tasks")}</div><div class="sub">${tr("more.tasks.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="h-rules"><div class="grow"><div class="title">${tr("tab.rules")}</div><div class="sub">${tr("more.rules.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="h-shop"><div class="grow"><div class="title">${tr("shop.title")}</div><div class="sub">${tr("hmore.shop.sub")}</div></div>${icon("chevron")}</button>
+      <button class="row" type="button" data-go="h-menu"><div class="grow"><div class="title">${tr("menu.title")}</div><div class="sub">${tr("more.menu.sub")}</div></div>${icon("chevron")}</button>
+      <button class="row" type="button" data-go="h-recipes"><div class="grow"><div class="title">${tr("recipe.title")}</div><div class="sub">${tr("more.recipes.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="h-rights"><div class="grow"><div class="title">${tr("hmore.rights")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-action="helper-lock"><div class="grow"><div class="title">${tr("hmore.lock")}</div><div class="sub">${tr("hmore.lock.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-action="choose-role" data-role="employer"><div class="grow"><div class="title">${tr("hmore.switchEmployer")}</div></div>${icon("chevron")}</button>
@@ -2110,6 +2763,347 @@ function viewHelperMore() {
     </div>
     ${disclaimer()}
   `;
+}
+
+/* ---------- meal plan (餐單) + recipes (菜譜) ---------- */
+
+function menuData() {
+  if (role === "helper") {
+    const p = sessionPayload();
+    return { menu: p?.menu || null, recipes: p?.recipes || [], ro: true };
+  }
+  return { menu: state.menu, recipes: state.recipes, ro: false };
+}
+
+function menuGo(name) {
+  return role === "helper" ? `h-${name}` : name;
+}
+
+function dishLine(d, date, recipes, ro) {
+  const r = recipes.find((x) => x.id === d.recipeId);
+  const label = dishLabel(d, recipes);
+  const link = r
+    ? `<button class="recipe-chip" type="button" data-go="${menuGo("recipe")}" data-recipe="${escapeHtml(r.id)}">${icon("book", { size: 13 })}${tr("recipe.link")}</button>`
+    : "";
+  return `<div class="dish">
+    <div class="dish-main">
+      <span class="dish-name">${escapeHtml(label)}</span>${link}
+      ${d.note ? `<div class="dish-note">${escapeHtml(d.note)}</div>` : ""}
+    </div>
+    ${ro ? "" : `<button class="btn secondary small" type="button" data-action="dish-edit" data-id="${escapeHtml(d.id)}" data-date="${date}">${tr("common.edit")}</button>`}
+  </div>`;
+}
+
+function menuTabs(active) {
+  return `<div class="seg" role="group" aria-label="${tr("menu.title")}">
+    <button type="button" class="seg-btn ${active === "menu" ? "is-on" : ""}" data-go="${menuGo("menu")}" aria-pressed="${active === "menu"}">${tr("menu.tab.menu")}</button>
+    <button type="button" class="seg-btn ${active === "recipes" ? "is-on" : ""}" data-go="${menuGo("recipes")}" aria-pressed="${active === "recipes"}">${tr("menu.tab.recipes")}</button>
+  </div>`;
+}
+
+function weekStrip(menu) {
+  const sel = ui.menuDate;
+  const t = today();
+  const days = weekDates(sel);
+  return `<div class="week-strip" role="group" aria-label="${tr("menu.week.aria")}">
+    <button class="icon-btn" type="button" data-action="menu-week" data-d="-7" aria-label="${tr("menu.week.prev")}">${icon("back")}</button>
+    ${days
+      .map((iso) => {
+        const n = dayCount(menu, iso);
+        const w = WEEKDAYS[weekday(iso)];
+        return `<button class="wday ${iso === sel ? "is-selected" : ""} ${iso === t ? "is-today" : ""}" type="button" data-action="menu-day" data-date="${iso}" aria-pressed="${iso === sel}" aria-label="${tr("menu.day.aria", { date: formatDate(iso, { shortWeek: true }), n })}">
+          <span class="wd">${pick(w, "shortZh", "shortEn")}</span><b>${Number(iso.slice(8, 10))}</b><i class="wdot ${n ? "on" : ""}"></i>
+        </button>`;
+      })
+      .join("")}
+    <button class="icon-btn" type="button" data-action="menu-week" data-d="7" aria-label="${tr("menu.week.next")}">${icon("chevron")}</button>
+  </div>`;
+}
+
+function viewMenu() {
+  const { menu, recipes, ro } = menuData();
+  const head = `
+    <h1 class="screen-title">${tr("menu.title")}</h1>
+    <p class="lede">${tr(ro ? "menu.helper.lede" : "menu.lede")}</p>
+    ${menuTabs("menu")}`;
+  if (!menu) return `${head}<div class="card" style="margin-top:0.9rem"><p class="muted" style="margin:0">${tr("menu.helper.none")}</p></div>`;
+  const sel = ui.menuDate;
+  const slots = menu.slots || [];
+  const t = today();
+  return `
+    ${head}
+    <div class="card" style="margin-top:0.9rem">
+      ${weekStrip(menu)}
+      <div class="menu-jump">
+        <label class="field" style="margin:0"><span class="tiny muted">${tr("menu.pickDate")}</span>
+          <input type="date" value="${escapeHtml(sel)}" data-action="menu-date" aria-label="${tr("menu.pickDate")}">
+        </label>
+        <button class="btn secondary small" type="button" data-action="menu-today" ${sel === t ? "disabled" : ""}>${tr("menu.today")}</button>
+      </div>
+    </div>
+    <section class="section">
+      <div class="section-head"><h2>${formatDate(sel, { weekday: true })}${sel === t ? ` <span class="tag brass">${tr("menu.today")}</span>` : ""}</h2></div>
+      ${slots
+        .map((slot) => {
+          const dishes = (menu.days?.[sel] || {})[slot.id] || [];
+          return `<div class="card meal-slot">
+            <div class="meal-head">
+              <strong>${escapeHtml(slotLabel(slot, tr))}</strong>
+              ${ro ? "" : `<button class="btn secondary small" type="button" data-action="dish-new" data-slot="${escapeHtml(slot.id)}" data-date="${sel}">${icon("plus", { size: 14 })}${tr("menu.addDish")}</button>`}
+            </div>
+            ${dishes.length ? dishes.map((d) => dishLine(d, sel, recipes, ro)).join("") : `<p class="muted tiny" style="margin:0.3rem 0 0">${tr("menu.empty")}</p>`}
+          </div>`;
+        })
+        .join("")}
+      ${ro ? "" : `<div class="btn-row">
+        <button class="btn secondary" type="button" data-action="copy-open">${tr("menu.copy")}</button>
+        <button class="btn secondary" type="button" data-action="slots-open">${tr("menu.slots.manage")}</button>
+      </div>`}
+    </section>
+    ${disclaimer()}`;
+}
+
+function menuHomeCard() {
+  const { menu, recipes, ro } = menuData();
+  const t = today();
+  const rows = menu ? dayDishes(menu, t) : [];
+  const body = !menu
+    ? `<p class="muted" style="margin:0">${tr("menu.helper.none")}</p>`
+    : rows.length
+      ? rows
+          .map(
+            ({ slot, dishes }) => `<div class="menu-row">
+              <span class="menu-slot">${escapeHtml(slotLabel(slot, tr))}</span>
+              <span class="menu-dishes">${dishes
+                .map((d) => `${escapeHtml(dishLabel(d, recipes))}${d.note ? `<small>（${escapeHtml(d.note)}）</small>` : ""}`)
+                .join("<i class=\"sep\">·</i>")}</span>
+            </div>`
+          )
+          .join("")
+      : `<p class="muted" style="margin:0 0 ${ro ? "0" : "0.6rem"}">${tr("menu.home.none")}</p>${ro ? "" : `<button class="btn small" type="button" data-action="menu-open" data-tab="menu">${tr("menu.home.plan")}</button>`}`;
+  return `<section class="panel menu-card">
+    <div class="panel-title"><h2>${tr("menu.home.title")}</h2><button class="linkish" type="button" data-action="menu-open" data-tab="${menuGo("menu")}">${tr("menu.home.open")}</button></div>
+    ${body}
+  </section>`;
+}
+
+function recipeCards(list, ro) {
+  if (!list.length) return `<p class="muted" style="margin:0">${tr(ui.recipeQuery ? "recipe.search.none" : "recipe.none")}</p>`;
+  return `<div class="recipe-grid">${list
+    .map(
+      (r) => `<button class="recipe-card" type="button" data-go="${ro ? "h-recipe" : "recipe"}" data-recipe="${escapeHtml(r.id)}">
+        <span class="recipe-thumb">${r.photo ? `<img src="${r.photo}" alt="" loading="lazy">` : icon("utensils", { size: 26 })}</span>
+        <span class="recipe-meta"><strong>${escapeHtml(r.name)}</strong>
+          ${r.tags.length ? `<span class="recipe-tags">${r.tags.slice(0, 3).map((x) => `<em>${escapeHtml(x)}</em>`).join("")}</span>` : ""}
+        </span>
+      </button>`
+    )
+    .join("")}</div>`;
+}
+
+function filteredRecipes(recipes) {
+  const q = String(ui.recipeQuery || "").trim().toLowerCase();
+  const list = recipes.slice().sort((a, b) => a.name.localeCompare(b.name, getLang() === "en" ? "en" : "zh-Hant"));
+  if (!q) return list;
+  return list.filter((r) => [r.name, ...r.tags, ...r.ingredients].join(" ").toLowerCase().includes(q));
+}
+
+function viewRecipes() {
+  const { recipes, ro } = menuData();
+  return `
+    <h1 class="screen-title">${tr("recipe.title")}</h1>
+    <p class="lede">${tr(ro ? "recipe.helper.lede" : "recipe.lede")}</p>
+    ${menuTabs("recipes")}
+    ${ro ? "" : `<div class="btn-row"><button class="btn" type="button" data-action="recipe-new">${icon("plus", { size: 16 })}${tr("recipe.new")}</button></div>`}
+    <input class="search" type="search" data-recipe-search placeholder="${tr("recipe.search.ph")}" value="${escapeHtml(ui.recipeQuery || "")}" aria-label="${tr("recipe.search.ph")}" style="margin-top:0.9rem">
+    <div id="recipe-list" class="card" style="margin-top:0.9rem">${recipeCards(filteredRecipes(recipes), ro)}</div>
+    ${disclaimer()}`;
+}
+
+function viewRecipe() {
+  const { recipes, ro } = menuData();
+  const r = recipes.find((x) => x.id === ui.recipeId);
+  const back = `<button class="linkish" type="button" data-go="${menuGo("recipes")}">${icon("back", { size: 15 })} ${tr("recipe.back")}</button>`;
+  if (!r) return `${back}<div class="card" style="margin-top:0.9rem"><p class="muted" style="margin:0">${tr("recipe.missing")}</p></div>`;
+  return `
+    ${back}
+    <article class="recipe-detail">
+      ${r.photo ? `<img class="recipe-hero" src="${r.photo}" alt="${escapeHtml(r.name)}">` : ""}
+      <h1 class="screen-title" style="margin-top:0.7rem">${escapeHtml(r.name)}</h1>
+      ${r.servings ? `<p class="lede" style="margin:0 0 0.4rem">${tr("recipe.servingsLine", { v: escapeHtml(r.servings) })}</p>` : ""}
+      ${r.tags.length ? `<p class="recipe-tags" style="margin:0 0 0.6rem">${r.tags.map((x) => `<em>${escapeHtml(x)}</em>`).join("")}</p>` : ""}
+      ${
+        ro
+          ? ""
+          : `<div class="btn-row">
+              <button class="btn" type="button" data-action="recipe-menu" data-id="${escapeHtml(r.id)}">${tr("recipe.addMenu")}</button>
+              <button class="btn secondary" type="button" data-action="recipe-shop-open" data-id="${escapeHtml(r.id)}">${icon("basket", { size: 16 })}${tr("recipe.addShop")}</button>
+              <button class="btn secondary" type="button" data-action="recipe-edit" data-id="${escapeHtml(r.id)}">${tr("common.edit")}</button>
+            </div>`
+      }
+      <div class="card" style="margin-top:0.9rem">
+        <h2 class="mini-title">${tr("recipe.ingredients")}</h2>
+        ${r.ingredients.length ? `<ul class="ing-list">${r.ingredients.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>` : `<p class="muted" style="margin:0">—</p>`}
+      </div>
+      <div class="card" style="margin-top:0.9rem">
+        <h2 class="mini-title">${tr("recipe.steps")}</h2>
+        ${r.steps.length ? `<ol class="step-list">${r.steps.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ol>` : `<p class="muted" style="margin:0">—</p>`}
+      </div>
+      ${r.notes ? `<div class="card" style="margin-top:0.9rem"><h2 class="mini-title">${tr("common.note")}</h2><p style="margin:0;white-space:pre-wrap">${escapeHtml(r.notes)}</p></div>` : ""}
+    </article>
+    ${disclaimer()}`;
+}
+
+function dishNameOptions() {
+  const seen = new Set();
+  for (const day of Object.values(state.menu.days || {})) {
+    for (const list of Object.values(day)) for (const d of list) if (d.text) seen.add(d.text);
+  }
+  return Array.from(seen)
+    .slice(-60)
+    .map((n) => `<option value="${escapeHtml(n)}"></option>`)
+    .join("");
+}
+
+function menuSheetBody(sheet) {
+  if (sheet.type === "dish") {
+    const slots = state.menu.slots;
+    if (!slots.length) return `<h2>${tr("menu.dish.add")}</h2><p class="muted">${tr("menu.dish.noSlots")}</p><div class="btn-row"><button class="btn" type="button" data-action="slots-open">${tr("menu.slots.manage")}</button></div>`;
+    let dish = null;
+    let slotId = sheet.slotId || slots[0].id;
+    if (sheet.id) {
+      for (const [sid, list] of Object.entries(state.menu.days[sheet.date] || {})) {
+        const f = list.find((d) => d.id === sheet.id);
+        if (f) {
+          dish = f;
+          slotId = sid;
+        }
+      }
+    }
+    const d = dish || newDish({ recipeId: sheet.recipeId || "" });
+    const text = dish ? d.text : d.recipeId ? dishLabel(d, state.recipes) : "";
+    return `
+      <h2>${sheet.id ? tr("menu.dish.edit") : tr("menu.dish.add")}${tr("log.sep")}${formatDate(sheet.date, { shortWeek: true })}</h2>
+      <form id="dish-form" data-date="${escapeHtml(sheet.date)}" data-id="${escapeHtml(sheet.id || "")}">
+        <label class="field"><span>${tr("menu.dish.slot")}</span>
+          <select name="slot">${slots.map((s) => `<option value="${escapeHtml(s.id)}" ${s.id === slotId ? "selected" : ""}>${escapeHtml(slotLabel(s, tr))}</option>`).join("")}</select>
+        </label>
+        <label class="field"><span>${tr("menu.dish.text")}</span>
+          <input name="text" maxlength="80" list="dish-names" value="${escapeHtml(text)}" placeholder="${tr("menu.dish.text.ph")}">
+          <datalist id="dish-names">${dishNameOptions()}</datalist>
+        </label>
+        <label class="field"><span>${tr("menu.dish.recipe")}</span>
+          <select name="recipeId">
+            <option value="">${tr("menu.dish.recipe.none")}</option>
+            ${state.recipes.map((r) => `<option value="${escapeHtml(r.id)}" ${d.recipeId === r.id ? "selected" : ""}>${escapeHtml(r.name)}</option>`).join("")}
+          </select>
+        </label>
+        <label class="field"><span>${tr("common.note")}</span><input name="note" maxlength="120" value="${escapeHtml(d.note || "")}" placeholder="${tr("menu.dish.note.ph")}"></label>
+        <div class="btn-row">
+          <button class="btn" type="submit">${tr("common.save")}</button>
+          ${sheet.id ? `<button class="btn danger" type="button" data-action="dish-del" data-id="${escapeHtml(sheet.id)}" data-date="${escapeHtml(sheet.date)}">${tr("common.delete")}</button>` : ""}
+        </div>
+      </form>`;
+  }
+  if (sheet.type === "copy-day") {
+    const from = ui.menuDate;
+    return `
+      <h2>${tr("menu.copy.title")}</h2>
+      <p class="lede" style="margin-bottom:0.8rem">${tr("menu.copy.from", { date: formatDate(from, { weekday: true }) })}</p>
+      <form id="copy-form" data-from="${escapeHtml(from)}">
+        <label class="field"><span>${tr("menu.copy.to")}</span><input type="date" name="to" required value="${escapeHtml(shiftISO(from, 1))}"></label>
+        <p class="tiny muted">${tr("menu.copy.hint")}</p>
+        <div class="btn-row"><button class="btn" type="submit">${tr("menu.copy.go")}</button></div>
+      </form>`;
+  }
+  if (sheet.type === "slots") {
+    const slots = state.menu.slots;
+    return `
+      <h2>${tr("menu.slots.title")}</h2>
+      <p class="tiny muted" style="margin-bottom:0.8rem">${tr("menu.slots.hint")}</p>
+      <div class="slot-list">
+        ${slots
+          .map(
+            (s, i) => `<div class="slot-row">
+              <input class="slot-name" data-slot="${escapeHtml(s.id)}" maxlength="20" value="${escapeHtml(s.name)}" placeholder="${escapeHtml(slotLabel({ ...s, name: "" }, tr))}" aria-label="${tr("menu.slots.name")}">
+              <button class="icon-btn rot-up" type="button" data-action="slot-up" data-id="${escapeHtml(s.id)}" ${i === 0 ? "disabled" : ""} aria-label="${tr("menu.slots.up")}">${icon("back")}</button>
+              <button class="icon-btn rot-down" type="button" data-action="slot-down" data-id="${escapeHtml(s.id)}" ${i === slots.length - 1 ? "disabled" : ""} aria-label="${tr("menu.slots.down")}">${icon("back")}</button>
+              <button class="btn ${ui.slotArm === s.id ? "danger" : "secondary"} small" type="button" data-action="slot-del" data-id="${escapeHtml(s.id)}">${tr(ui.slotArm === s.id ? "menu.slots.del.confirm" : "menu.slots.del")}</button>
+            </div>`
+          )
+          .join("")}
+      </div>
+      <form id="slot-add-form" class="slot-add">
+        <input name="name" maxlength="20" placeholder="${tr("menu.slots.new.ph")}" aria-label="${tr("menu.slots.add")}" ${slots.length >= MAX_SLOTS ? "disabled" : ""}>
+        <button class="btn secondary" type="submit" ${slots.length >= MAX_SLOTS ? "disabled" : ""}>${icon("plus", { size: 15 })}${tr("menu.slots.add")}</button>
+      </form>
+      <div class="btn-row"><button class="btn" type="button" data-action="slots-done">${tr("menu.slots.done")}</button></div>`;
+  }
+  if (sheet.type === "recipe") {
+    const r = sheet.id ? state.recipes.find((x) => x.id === sheet.id) : newRecipe();
+    if (!r) return "";
+    return `
+      <h2>${sheet.id ? tr("recipe.edit") : tr("recipe.new")}</h2>
+      <form id="recipe-form" data-id="${escapeHtml(r.id)}">
+        <label class="field"><span>${tr("recipe.f.name")}</span><input name="name" required maxlength="80" value="${escapeHtml(r.name)}" placeholder="${tr("recipe.f.name.ph")}"></label>
+        <div class="field">
+          <span>${tr("recipe.f.photo")}</span>
+          <div class="photo-row">
+            <button class="photo-btn" type="button" data-action="pick-recipe-photo" aria-label="${tr("recipe.photo.add")}">
+              ${ui.recipePhoto ? `<img src="${ui.recipePhoto}" alt="">` : icon("camera", { size: 22 })}
+            </button>
+            ${ui.recipePhoto ? `<button class="btn secondary small" type="button" data-action="recipe-photo-clear">${tr("recipe.photo.remove")}</button>` : ""}
+          </div>
+          <input type="file" accept="image/*" data-role="recipe-photo-input" hidden>
+        </div>
+        <label class="field"><span>${tr("recipe.f.servings")}</span><input name="servings" maxlength="20" value="${escapeHtml(r.servings)}" placeholder="${tr("recipe.f.servings.ph")}"></label>
+        <label class="field"><span>${tr("recipe.f.ingredients")}</span><textarea name="ingredients" rows="6" placeholder="${tr("recipe.f.ingredients.ph")}">${escapeHtml(r.ingredients.join("\n"))}</textarea></label>
+        <label class="field"><span>${tr("recipe.f.steps")}</span><textarea name="steps" rows="6" placeholder="${tr("recipe.f.steps.ph")}">${escapeHtml(r.steps.join("\n"))}</textarea></label>
+        <label class="field"><span>${tr("recipe.f.tags")}</span><input name="tags" maxlength="120" value="${escapeHtml(r.tags.join(", "))}" placeholder="${tr("recipe.f.tags.ph")}"></label>
+        <label class="field"><span>${tr("common.note")}</span><textarea name="notes" rows="3" maxlength="800">${escapeHtml(r.notes)}</textarea></label>
+        <div class="btn-row">
+          <button class="btn" type="submit">${tr("common.save")}</button>
+          ${sheet.id ? `<button class="btn danger" type="button" data-action="recipe-del" data-id="${escapeHtml(r.id)}">${tr("common.delete")}</button>` : ""}
+        </div>
+      </form>`;
+  }
+  if (sheet.type === "recipe-shop") {
+    const r = state.recipes.find((x) => x.id === sheet.id);
+    const h = helper();
+    if (!r || !h) return `<h2>${tr("recipe.shop.title")}</h2><p class="muted">${tr("toast.addHelperFirst")}</p>`;
+    const open = listsFor(h)
+      .filter((l) => l.status !== "done")
+      .sort((a, b) => listDate(b).localeCompare(listDate(a)));
+    const preferred = open.find((l) => listDate(l) === today()) || null;
+    return `
+      <h2>${tr("recipe.shop.title")}${tr("log.sep")}${escapeHtml(r.name)}</h2>
+      ${
+        r.ingredients.length
+          ? `<form id="recipe-shop-form" data-id="${escapeHtml(r.id)}">
+        <label class="field"><span>${tr("recipe.shop.pick")}</span>
+          <select name="list">
+            <option value="new" ${preferred ? "" : "selected"}>${tr("recipe.shop.new", { name: escapeHtml(r.name) })}</option>
+            ${open.map((l) => `<option value="${escapeHtml(l.id)}" ${preferred && preferred.id === l.id ? "selected" : ""}>${escapeHtml(l.title)}${tr("log.sep")}${formatDate(listDate(l), { short: true })}</option>`).join("")}
+          </select>
+        </label>
+        <div class="field"><span>${tr("recipe.shop.items")}</span>
+          <div class="ing-pick">${r.ingredients
+            .map((x, i) => `<label class="check-row"><input type="checkbox" name="ing" value="${i}" checked><span>${escapeHtml(x)}</span></label>`)
+            .join("")}</div>
+        </div>
+        <div class="btn-row"><button class="btn" type="submit">${tr("recipe.shop.go")}</button></div>
+      </form>`
+          : `<p class="muted">${tr("recipe.shop.none")}</p>`
+      }`;
+  }
+  return "";
+}
+
+function applySlotNames() {
+  document.querySelectorAll(".slot-name").forEach((inp) => {
+    const slot = state.menu.slots.find((x) => x.id === inp.getAttribute("data-slot"));
+    if (slot) slot.name = inp.value.trim().slice(0, 20);
+  });
 }
 
 /* ---------- sheets ---------- */
@@ -2166,10 +3160,48 @@ function sheetHtml() {
         <label class="field"><span>${tr("sheet.pay.food")}</span><input type="number" name="food" inputmode="decimal" step="1" value="${h?.foodProvided ? 0 : h?.foodAllowance ?? 0}"></label>
         <label class="field"><span>${tr("sheet.pay.adjust")}</span><input type="number" name="adjustments" inputmode="decimal" step="1" value="0"></label>
         <label class="field"><span>${tr("sheet.pay.paidOn")}</span><input type="date" name="paidOn" value="${t}"></label>
+        <label class="field"><span>${tr("payslip.method")}</span>
+          <select name="method"><option value="">—</option>${PAY_METHODS.map((m) => `<option value="${m}">${tr(`pay.method.${m}`)}</option>`).join("")}</select>
+        </label>
         <label class="field"><span>${tr("common.note")}</span><textarea name="note"></textarea></label>
         <div class="btn-row"><button class="btn" type="submit">${tr("common.save")}</button></div>
       </form>
     `;
+  } else if (sheet.type === "reminder") {
+    const rem = sheet.id ? state.customReminders.find((r) => r.id === sheet.id) : newCustomReminder({ helperId: helper()?.id || "" });
+    body = `
+      <h2>${sheet.id ? tr("remind.edit") : tr("remind.new")}</h2>
+      <form id="reminder-form" data-id="${escapeHtml(rem.id)}" data-edit="${sheet.id ? "1" : ""}">
+        <label class="field"><span>${tr("remind.f.title")}</span><input name="title" required maxlength="80" value="${escapeHtml(rem.title)}" placeholder="${tr("remind.f.title.ph")}"></label>
+        <label class="field"><span>${tr("remind.f.date")}</span><input type="date" name="date" required value="${escapeHtml(rem.date)}"></label>
+        <label class="field"><span>${tr("remind.f.repeat")}</span>
+          <select name="repeat">
+            ${["none", "monthly", "yearly"].map((v) => `<option value="${v}" ${rem.repeat === v ? "selected" : ""}>${tr(`remind.repeat.${v}`)}</option>`).join("")}
+          </select>
+        </label>
+        <label class="field"><span>${tr("remind.f.helper")}</span>
+          <select name="rhelper">
+            <option value="" ${rem.helperId ? "" : "selected"}>${tr("remind.f.helper.none")}</option>
+            ${state.helpers.map((x) => `<option value="${escapeHtml(x.id)}" ${rem.helperId === x.id ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("")}
+          </select>
+          <span class="hint">${tr("remind.f.helper.hint")}</span>
+        </label>
+        <label class="field"><span>${tr("common.note")}</span><textarea name="note" maxlength="400">${escapeHtml(rem.note || "")}</textarea></label>
+        <div class="btn-row">
+          <button class="btn" type="submit">${tr("common.save")}</button>
+          ${sheet.id ? `<button class="btn danger" type="button" data-action="reminder-del" data-id="${rem.id}">${tr("common.delete")}</button>` : ""}
+        </div>
+      </form>
+    `;
+  } else if (sheet.type === "price-history") {
+    const rows = role === "helper" ? sessionPayload()?.priceCatalog || [] : state.priceCatalog || [];
+    const row = rows.find((c) => c.key === sheet.key);
+    body = `<h2>${tr("shop.hist.title")}${row ? tr("log.sep") + escapeHtml(row.name) : ""}</h2>${priceHistoryHtml(row, role === "helper" ? "session" : "stored")}
+      <div class="btn-row"><button class="btn secondary" type="button" data-action="sheet-close">${tr("common.close")}</button></div>`;
+  } else if (["dish", "copy-day", "slots", "recipe", "recipe-shop"].includes(sheet.type)) {
+    body = menuSheetBody(sheet);
+  } else if (sheet.type === "consent") {
+    body = consentSheetBody(sheet);
   } else if (sheet.type === "task") {
     const task = sheet.id ? state.workTasks.find((t) => t.id === sheet.id) : newWorkTask({ helperId: helper()?.id, schedule: "daily" });
     const weekly = (task.weekdays || []).map(Number);
@@ -2222,6 +3254,7 @@ function sheetHtml() {
       <h2>${tr("sheet.list.title")}</h2>
       <form id="shop-list-form">
         <label class="field"><span>${tr("sheet.list.name")}</span><input name="title" required maxlength="80" placeholder="${tr("sheet.list.name.ph")}"></label>
+        <label class="field"><span>${tr("shop.date")}</span><input type="date" name="date" required value="${escapeHtml(sheet.date || today())}"></label>
         <label class="field"><span>${tr("sheet.list.place")}</span>
           <select name="place">
             ${SHOP_PLACES.map((p) => `<option value="${p.id}">${pick(p)}</option>`).join("")}
@@ -2240,9 +3273,9 @@ function sheetHtml() {
       <form id="shop-item-form" data-id="${escapeHtml(item.id)}" data-list="${escapeHtml(item.listId)}">
         <label class="field"><span>${tr("sheet.item.name")}</span>
           <input name="name" required maxlength="80" list="catalog-names" value="${escapeHtml(item.name || "")}" placeholder="${tr("sheet.item.name.ph")}">
-          <datalist id="catalog-names">${(state.priceCatalog || []).map((c) => `<option value="${escapeHtml(c.name)}">`).join("")}</datalist>
+          <datalist id="catalog-names">${catalogNameOptions()}</datalist>
         </label>
-        <p class="price-hint" data-suggest>${cat ? tr("shop.lastPrice", { price: formatMoney(cat.lastPrice), date: cat.lastPaidOn ? tr("shop.lastPrice.date", { date: formatDate(cat.lastPaidOn, { short: true }) }) : "" }) : tr("sheet.item.suggestEmpty")}</p>
+        <div data-suggest-wrap>${itemHintBlock(cat)}</div>
         <label class="field"><span>${tr("sheet.item.qty")}</span><input name="qty" maxlength="40" value="${escapeHtml(item.qty || "")}" placeholder="${tr("sheet.item.qty.ph")}"></label>
         <label class="field"><span>${tr("common.note")}</span><textarea name="note" maxlength="400">${escapeHtml(item.note || "")}</textarea></label>
         <div class="field">
@@ -2294,6 +3327,12 @@ function mainContent() {
         return viewHelperShop();
       case "h-shop-detail":
         return viewHelperShopDetail();
+      case "h-menu":
+        return viewMenu();
+      case "h-recipes":
+        return viewRecipes();
+      case "h-recipe":
+        return viewRecipe();
       case "h-pay":
         return viewHelperPay();
       case "h-remind":
@@ -2325,6 +3364,12 @@ function mainContent() {
       return viewShop();
     case "shop-detail":
       return viewShopDetail();
+    case "menu":
+      return viewMenu();
+    case "recipes":
+      return viewRecipes();
+    case "recipe":
+      return viewRecipe();
     case "share":
       return viewShare();
     case "more":
@@ -2396,6 +3441,8 @@ function bootError(err) {
 function render() {
   const app = document.getElementById("app");
   if (!app) return;
+  const keep = captureForms();
+  if (!["helper-new", "helper-edit"].includes(ui.tab)) ui.docDraft = null;
   try {
     const sub =
       role === "helper" ? (sessionHelper()?.name ? escapeHtml(sessionHelper().name) + tr("log.sep") + tr("header.helperView") : tr("header.helperView")) : tr("header.employerView");
@@ -2410,9 +3457,13 @@ function render() {
         </div>
       </div>
       ${sheetHtml()}
+      ${docViewerHtml()}
+      ${payslipHtml()}
       ${ui.toast ? `<div class="toast" role="status">${escapeHtml(ui.toast)}</div>` : ""}
     `;
+    restoreForms(keep);
     bindAfterRender();
+    setupSignaturePad();
   } catch (err) {
     console.error(err);
     bootError(err);
@@ -2459,22 +3510,39 @@ function bindAfterRender() {
       form.querySelector("[data-once-only]")?.toggleAttribute("hidden", schedule.value !== "once");
     });
   }
+  const rs = document.querySelector("[data-recipe-search]");
+  if (rs) {
+    rs.addEventListener("input", () => {
+      ui.recipeQuery = rs.value;
+      const box = document.getElementById("recipe-list");
+      if (box) box.innerHTML = recipeCards(filteredRecipes(menuData().recipes), role === "helper");
+    });
+  }
   const nameInput = document.querySelector("#shop-item-form [name=name]");
   if (nameInput) {
-    nameInput.addEventListener("input", () => {
+    const price = document.querySelector("#shop-item-form [name=paidPrice]");
+    const wrap = document.querySelector("[data-suggest-wrap]");
+    const itemId = document.getElementById("shop-item-form")?.getAttribute("data-id") || "";
+    const existing = state.shopItems.find((i) => i.id === itemId);
+    const update = () => {
       const cat = findCatalog(state, nameInput.value);
-      const hint = document.querySelector("[data-suggest]");
-      const price = document.querySelector("#shop-item-form [name=paidPrice]");
-      if (hint) {
-        hint.textContent = cat
-          ? tr("shop.lastPrice", { price: formatMoney(cat.lastPrice), date: cat.lastPaidOn ? tr("shop.lastPrice.date", { date: formatDate(cat.lastPaidOn, { short: true }) }) : "" })
-          : tr("sheet.item.suggestEmpty");
-      }
-      if (price && cat && (price.value === "" || price.dataset.autofilled === "1")) {
-        price.placeholder = String(cat.lastPrice);
+      if (wrap) wrap.innerHTML = itemHintBlock(cat);
+      if (!price) return;
+      if (cat && (price.value === "" || price.dataset.autofilled === "1")) {
+        price.value = String(cat.lastPrice);
         price.dataset.autofilled = "1";
+        price.dataset.suggest = String(cat.lastPrice);
+      } else if (!cat && price.dataset.autofilled === "1") {
+        price.value = "";
+        price.dataset.autofilled = "";
+        price.dataset.suggest = "";
       }
+    };
+    nameInput.addEventListener("input", update);
+    price?.addEventListener("input", () => {
+      price.dataset.autofilled = "";
     });
+    if (!existing || (existing.paidPrice === "" || existing.paidPrice == null)) update();
   }
 }
 
@@ -2505,6 +3573,9 @@ function collectHelperForm(form) {
     notes: String(fd.get("notes") || ""),
     visaExpiry: String(fd.get("visaExpiry") || ""),
     passportExpiry: String(fd.get("passportExpiry") || ""),
+    passportNo: cleanIdNumber(fd.get("passportNo")),
+    hkidNo: cleanIdNumber(fd.get("hkidNo")),
+    docs: normalizeDocs(ui.docDraft),
     winterChoice: helper()?.winterChoice || "christmas",
     grantGeneralHolidays: helper()?.grantGeneralHolidays || false,
   });
@@ -2523,7 +3594,10 @@ function writeShopBackToEmployer() {
     if (idx >= 0) {
       state.shopItems[idx] = { ...state.shopItems[idx], bought: it.bought, paidPrice: it.paidPrice };
       if (it.paidPrice !== "" && it.paidPrice != null && Number(it.paidPrice) >= 0) {
-        recordCatalogPrice(state, it.name, it.paidPrice, today(), "");
+        {
+          const lst = state.shopLists.find((l) => l.id === state.shopItems[idx].listId);
+          recordCatalogPrice(state, it.name, it.paidPrice, (lst && listDate(lst)) || today(), lst?.place || "", { listId: lst?.id || "", itemId: it.id });
+        }
       }
     }
   }
@@ -2539,6 +3613,7 @@ async function onClick(ev) {
   if (go) {
     ev.preventDefault();
     if (go.dataset.list) ui.shopListId = go.dataset.list;
+    if (go.dataset.recipe) ui.recipeId = go.dataset.recipe;
     setTab(go.getAttribute("data-go"));
     return;
   }
@@ -2670,6 +3745,90 @@ async function onClick(ev) {
     render();
     return;
   }
+  if (action === "consent-open") {
+    ui.sigData = "";
+    ui.sheet = { type: "consent", payId: id };
+    render();
+    return;
+  }
+  if (action === "sig-clear") {
+    ui.sigData = "";
+    const cv = document.getElementById("sig-pad");
+    cv?.getContext("2d")?.clearRect(0, 0, cv.width, cv.height);
+    return;
+  }
+  if (action === "consent-clear") {
+    if (!window.confirm(tr("consent.clear.confirm"))) return;
+    const p = state.payments.find((x) => x.id === id);
+    if (p) {
+      p.consent = null;
+      save();
+    }
+    render();
+    return;
+  }
+  if (action === "payslip-open") {
+    ui.payslipId = id;
+    render();
+    return;
+  }
+  if (action === "payslip-close") {
+    ui.payslipId = null;
+    render();
+    return;
+  }
+  if (action === "payslip-print") {
+    window.print();
+    return;
+  }
+  if (action === "import-return") {
+    const text = document.getElementById("return-code")?.value || "";
+    try {
+      const obj = parsePayReturnCode(text);
+      const owner = state.helpers.find((x) => state.helperAccess[x.id]?.shareId === obj.shareId);
+      if (!owner) throw new Error(tr("consent.import.noMatch"));
+      let n = 0;
+      for (const it of obj.items) {
+        const p = state.payments.find((x) => x.id === it.id && x.helperId === owner.id);
+        if (!p) continue;
+        if (!p.consent) n += 1;
+        p.consent = p.consent || normalizeConsent({ status: "confirmed", at: it.at || new Date().toISOString(), by: "helper-code", signature: "" });
+      }
+      if (!save()) return;
+      ui.returnMsg = tp("consent.import.ok", n, { name: owner.name });
+    } catch (err) {
+      ui.returnMsg = err?.message || tr("err.returnFormat");
+    }
+    render();
+    return;
+  }
+  if (action === "h-pay-confirm") {
+    const p = sessionPayload();
+    if (!p?.shareId) return;
+    if (!window.confirm(tr("hpay.confirm.ask"))) return;
+    const at = new Date().toISOString();
+    if (!setPayConsent(p.shareId, id, at)) return toast(tr("toast.storageFull"));
+    if (sameDeviceWriteback()) {
+      const rec = state.payments.find((x) => x.id === id);
+      if (rec && !rec.consent) {
+        rec.consent = { status: "confirmed", at, by: "helper-device", signature: "" };
+        save();
+      }
+    }
+    toast(tr("hpay.confirm.done"));
+    return;
+  }
+  if (action === "copy-return") {
+    const code = document.getElementById("return-code-out")?.value || "";
+    try {
+      await navigator.clipboard.writeText(code);
+      toast(tr("hpay.code.copied"));
+    } catch {
+      document.getElementById("return-code-out")?.select();
+      toast(tr("toast.longPress"));
+    }
+    return;
+  }
   if (action === "pay-del") {
     state.payments = state.payments.filter((p) => p.id !== id);
     save();
@@ -2683,9 +3842,178 @@ async function onClick(ev) {
     render();
     return;
   }
+  if (action === "remind-done" && String(id).startsWith("custom:")) {
+    const rem = state.customReminders.find((r) => r.id === String(id).slice(7));
+    if (rem) {
+      if (rem.repeat === "none") rem.doneAt = new Date().toISOString();
+      else rem.date = nextCustomDate(rem, today());
+      delete state.reminderState[id];
+      save();
+      toast(tr(rem.repeat === "none" ? "remind.marked" : "remind.rolled", { date: formatDate(rem.date, { short: true }) }));
+    }
+    render();
+    return;
+  }
+  if (action === "reminder-new") {
+    ui.sheet = { type: "reminder" };
+    render();
+    return;
+  }
+  if (action === "reminder-edit") {
+    ui.sheet = { type: "reminder", id };
+    render();
+    return;
+  }
+  if (action === "reminder-del") {
+    state.customReminders = state.customReminders.filter((r) => r.id !== id);
+    delete state.reminderState[`custom:${id}`];
+    save();
+    ui.sheet = null;
+    render();
+    return;
+  }
+  if (action === "reminder-restore") {
+    const rem = state.customReminders.find((r) => r.id === id);
+    if (rem) {
+      rem.doneAt = "";
+      save();
+    }
+    render();
+    return;
+  }
   if (action === "remind-done") {
     state.reminderState[id] = { ...(state.reminderState[id] || {}), done: true };
     save();
+    render();
+    return;
+  }
+  if (action === "menu-open") {
+    ui.menuDate = today();
+    setTab(act.getAttribute("data-tab") || menuGo("menu"));
+    return;
+  }
+  if (action === "menu-day") {
+    ui.menuDate = act.getAttribute("data-date");
+    render();
+    return;
+  }
+  if (action === "menu-today") {
+    ui.menuDate = today();
+    render();
+    return;
+  }
+  if (action === "menu-week") {
+    ui.menuDate = shiftISO(ui.menuDate, Number(act.getAttribute("data-d")) || 0);
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "dish-new") {
+    ui.sheet = { type: "dish", date: act.getAttribute("data-date"), slotId: act.getAttribute("data-slot") };
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "dish-edit") {
+    ui.sheet = { type: "dish", date: act.getAttribute("data-date"), id };
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "dish-del") {
+    const date = act.getAttribute("data-date");
+    const day = state.menu.days[date] || {};
+    for (const k of Object.keys(day)) day[k] = day[k].filter((d) => d.id !== id);
+    pruneDay(state.menu, date);
+    save();
+    ui.sheet = null;
+    toast(tr("menu.dish.deleted"));
+    return;
+  }
+  if (role !== "helper" && action === "copy-open") {
+    ui.sheet = { type: "copy-day" };
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "slots-open") {
+    ui.slotArm = "";
+    ui.sheet = { type: "slots" };
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "slots-done") {
+    applySlotNames();
+    save();
+    ui.slotArm = "";
+    ui.sheet = null;
+    render();
+    return;
+  }
+  if (role !== "helper" && (action === "slot-up" || action === "slot-down")) {
+    applySlotNames();
+    const i = state.menu.slots.findIndex((s) => s.id === id);
+    const j = action === "slot-up" ? i - 1 : i + 1;
+    if (i >= 0 && j >= 0 && j < state.menu.slots.length) {
+      const [s] = state.menu.slots.splice(i, 1);
+      state.menu.slots.splice(j, 0, s);
+    }
+    ui.slotArm = "";
+    save();
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "slot-del") {
+    applySlotNames();
+    if (ui.slotArm !== id) {
+      ui.slotArm = id;
+      render();
+      return;
+    }
+    state.menu.slots = state.menu.slots.filter((s) => s.id !== id);
+    for (const date of Object.keys(state.menu.days)) {
+      delete state.menu.days[date][id];
+      pruneDay(state.menu, date);
+    }
+    ui.slotArm = "";
+    save();
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "recipe-new") {
+    ui.recipePhoto = "";
+    ui.sheet = { type: "recipe" };
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "recipe-edit") {
+    const r = state.recipes.find((x) => x.id === id);
+    ui.recipePhoto = r?.photo || "";
+    ui.sheet = { type: "recipe", id };
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "recipe-del") {
+    state.recipes = state.recipes.filter((r) => r.id !== id);
+    save();
+    ui.sheet = null;
+    ui.recipeId = null;
+    toast(tr("recipe.deleted"));
+    setTab("recipes");
+    return;
+  }
+  if (action === "pick-recipe-photo") {
+    document.querySelector("[data-role=recipe-photo-input]")?.click();
+    return;
+  }
+  if (action === "recipe-photo-clear") {
+    ui.recipePhoto = "";
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "recipe-menu") {
+    ui.sheet = { type: "dish", date: ui.menuDate, slotId: state.menu.slots[0]?.id || "", recipeId: id };
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "recipe-shop-open") {
+    ui.sheet = { type: "recipe-shop", id };
     render();
     return;
   }
@@ -2725,8 +4053,44 @@ async function onClick(ev) {
     render();
     return;
   }
+  if (action === "shop-view") {
+    ui.shopView = act.getAttribute("data-view") === "cal" ? "cal" : "list";
+    ui.shopDay = "";
+    render();
+    return;
+  }
+  if (action === "shop-month") {
+    const d = new Date(ui.shopCal.year, ui.shopCal.month + Number(act.getAttribute("data-d")), 1);
+    ui.shopCal = { year: d.getFullYear(), month: d.getMonth() };
+    ui.shopDay = "";
+    render();
+    return;
+  }
+  if (action === "shop-day") {
+    const date = act.getAttribute("data-date");
+    const lists = role === "helper" ? sessionPayload()?.shopLists || [] : listsFor(helper());
+    const hit = lists.filter((l) => listDate(l) === date);
+    if (hit.length === 1) {
+      ui.shopListId = hit[0].id;
+      ui.shopDay = date;
+      setTab(role === "helper" ? "h-shop-detail" : "shop-detail");
+      return;
+    }
+    ui.shopDay = date;
+    render();
+    return;
+  }
+  if (action === "price-history") {
+    ui.sheet = { type: "price-history", key: act.getAttribute("data-key") };
+    render();
+    return;
+  }
+  if (action === "price-hist-toggle") {
+    act.closest("[data-suggest-wrap]")?.querySelector(".price-hist")?.toggleAttribute("hidden");
+    return;
+  }
   if (action === "shop-new") {
-    ui.sheet = { type: "shop-list" };
+    ui.sheet = { type: "shop-list", date: act.getAttribute("data-date") || "" };
     render();
     return;
   }
@@ -2742,6 +4106,7 @@ async function onClick(ev) {
   }
   if (action === "item-del") {
     state.shopItems = state.shopItems.filter((i) => i.id !== id);
+    removeCatalogEntry(state, id);
     save();
     ui.sheet = null;
     render();
@@ -2765,7 +4130,7 @@ async function onClick(ev) {
       list.completedAt = new Date().toISOString();
       itemsForList(listId).forEach((item) => {
         if (item.paidPrice !== "" && item.paidPrice != null) {
-          recordCatalogPrice(state, item.name, item.paidPrice, today(), list.place);
+          recordCatalogPrice(state, item.name, item.paidPrice, listDate(list) || today(), list.place, { listId: list.id, itemId: item.id });
         }
       });
       save();
@@ -2782,6 +4147,43 @@ async function onClick(ev) {
       save();
       render();
     }
+    return;
+  }
+  if (action === "doc-pick") {
+    act.closest(".doc-block")?.querySelector("[data-doc-input]")?.click();
+    return;
+  }
+  if (action === "doc-del") {
+    const list = ui.docDraft?.[act.getAttribute("data-doc")];
+    if (list) list.splice(Number(act.getAttribute("data-idx")), 1);
+    render();
+    return;
+  }
+  if (action === "doc-view") {
+    const v = { src: act.getAttribute("data-src"), type: act.getAttribute("data-doc"), idx: Number(act.getAttribute("data-idx")), url: "" };
+    const d = docList(v.src, v.type)[v.idx];
+    if (!d) return;
+    if (d.type === "application/pdf") {
+      try {
+        v.url = dataUrlToBlobUrl(d.data);
+      } catch {
+        v.url = d.data;
+      }
+    }
+    ui.docView = v;
+    render();
+    return;
+  }
+  if (action === "doc-close") {
+    if (ui.docView?.url?.startsWith("blob:")) URL.revokeObjectURL(ui.docView.url);
+    ui.docView = null;
+    render();
+    return;
+  }
+  if (action === "toggle-reveal") {
+    const key = `${act.getAttribute("data-src")}:${act.getAttribute("data-field")}`;
+    ui.reveal[key] = !ui.reveal[key];
+    render();
     return;
   }
   if (action === "pick-photo") {
@@ -2898,6 +4300,75 @@ async function onClick(ev) {
 async function onChange(ev) {
   const el = ev.target;
   const action = el.getAttribute("data-action");
+  if (action === "list-date") {
+    const list = state.shopLists.find((l) => l.id === el.getAttribute("data-list"));
+    if (!list || !/^\d{4}-\d{2}-\d{2}$/.test(el.value)) return;
+    list.date = el.value;
+    for (const c of state.priceCatalog) for (const e of c.history || []) if (e.listId === list.id) e.date = list.date;
+    state.priceCatalog = normalizeCatalog(state.priceCatalog);
+    save();
+    ui.shopCal = { year: Number(list.date.slice(0, 4)), month: Number(list.date.slice(5, 7)) - 1 };
+    render();
+    return;
+  }
+  if (action === "menu-date") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(el.value)) {
+      ui.menuDate = el.value;
+      render();
+    }
+    return;
+  }
+  if (el.classList?.contains("slot-name") && role !== "helper") {
+    applySlotNames();
+    save();
+    return;
+  }
+  if (el.getAttribute("data-role") === "recipe-photo-input" && el.files?.[0]) {
+    try {
+      ui.recipePhoto = await compressImageFile(el.files[0], { maxSize: 800, quality: 0.7 });
+      render();
+    } catch (err) {
+      toast(err.message || tr("toast.photoFailed"));
+    }
+    return;
+  }
+  if (el.name === "recipeId" && el.closest("#dish-form")) {
+    const textEl = document.querySelector("#dish-form [name=text]");
+    const r = state.recipes.find((x) => x.id === el.value);
+    if (textEl && r && !textEl.value.trim()) textEl.value = r.name;
+    return;
+  }
+  if (action === "employer-name") {
+    state.settings.employerName = el.value.trim().slice(0, 80);
+    save();
+    return;
+  }
+  if (el.hasAttribute("data-doc-input")) {
+    const type = el.getAttribute("data-doc-input");
+    const files = Array.from(el.files || []);
+    el.value = "";
+    if (!ui.docDraft || !DOC_TYPES.includes(type)) return;
+    let failed = "";
+    for (const f of files) {
+      if (ui.docDraft[type].length >= MAX_DOC_FILES) {
+        failed = tr("doc.max", { n: MAX_DOC_FILES });
+        break;
+      }
+      try {
+        ui.docDraft[type].push(await readDocFile(f));
+      } catch (err) {
+        failed = err?.message || tr("doc.readFail");
+      }
+    }
+    if (failed) toast(failed);
+    else render();
+    return;
+  }
+  if (action === "toggle-share-docs") {
+    ui.shareDocs = el.checked;
+    render();
+    return;
+  }
   if (action === "toggle-gh") {
     const h = helper();
     if (!h) return;
@@ -2984,11 +4455,18 @@ function onSubmit(ev) {
     const data = collectHelperForm(form);
     if (!data.name) return toast(tr("toast.needName"));
     if (!data.startDate) return toast(tr("toast.needStart"));
+    const prevHelpers = state.helpers.slice();
+    const prevCurrent = state.currentHelperId;
     const idx = state.helpers.findIndex((x) => x.id === data.id);
     if (idx >= 0) state.helpers[idx] = { ...state.helpers[idx], ...data };
     else state.helpers.push(data);
     state.currentHelperId = data.id;
-    save();
+    if (!save()) {
+      state.helpers = prevHelpers;
+      state.currentHelperId = prevCurrent;
+      return;
+    }
+    ui.docDraft = null;
     if (isArrangedRestPolicy(data.restDay)) {
       toast(tr("toast.savedArranged"));
       ui.leavePane = "rest";
@@ -3031,6 +4509,7 @@ function onSubmit(ev) {
         food: Number(fd.get("food") || 0),
         adjustments: Number(fd.get("adjustments") || 0),
         paidOn: String(fd.get("paidOn") || ""),
+        method: String(fd.get("method") || ""),
         note: String(fd.get("note") || ""),
       })
     );
@@ -3038,6 +4517,186 @@ function onSubmit(ev) {
     ui.sheet = null;
     toast(tr("toast.payLogged"));
     render();
+  }
+  if (form.getAttribute("id") === "reminder-form") {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    const title = String(fd.get("title") || "").trim();
+    const date = String(fd.get("date") || "");
+    if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return toast(tr("remind.err"));
+    const id = form.getAttribute("data-id");
+    const fields = {
+      title,
+      date,
+      repeat: ["monthly", "yearly"].includes(String(fd.get("repeat"))) ? String(fd.get("repeat")) : "none",
+      anchorDay: Number(date.slice(8, 10)),
+      helperId: String(fd.get("rhelper") || ""),
+      note: String(fd.get("note") || "").trim(),
+    };
+    const idx = state.customReminders.findIndex((r) => r.id === id);
+    if (idx >= 0) {
+      state.customReminders[idx] = { ...state.customReminders[idx], ...fields };
+      delete state.reminderState[`custom:${id}`];
+    } else {
+      state.customReminders.push(newCustomReminder({ id, ...fields }));
+    }
+    if (!save()) return;
+    ui.sheet = null;
+    toast(tr("remind.saved"));
+    render();
+    return;
+  }
+  if (form.getAttribute("id") === "dish-form") {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    const date = form.getAttribute("data-date");
+    const editId = form.getAttribute("data-id");
+    const slotId = String(fd.get("slot") || "");
+    const recipeId = state.recipes.some((r) => r.id === String(fd.get("recipeId"))) ? String(fd.get("recipeId")) : "";
+    const text = String(fd.get("text") || "").trim().slice(0, 80);
+    if (!text && !recipeId) return toast(tr("menu.dish.err"));
+    if (!state.menu.slots.some((s) => s.id === slotId)) return;
+    const rec = newDish({ text, recipeId, note: String(fd.get("note") || "").trim().slice(0, 120) });
+    const day = (state.menu.days[date] = state.menu.days[date] || {});
+    let placed = false;
+    if (editId) {
+      for (const k of Object.keys(day)) {
+        const i = day[k].findIndex((d) => d.id === editId);
+        if (i < 0) continue;
+        rec.id = editId;
+        if (k === slotId) {
+          day[k][i] = rec;
+          placed = true;
+        } else {
+          day[k].splice(i, 1);
+        }
+      }
+    }
+    if (!placed) {
+      day[slotId] = [...(day[slotId] || []), rec].slice(-MAX_DISHES_PER_SLOT);
+    }
+    pruneDay(state.menu, date);
+    ui.menuDate = date;
+    if (!save()) return;
+    ui.sheet = null;
+    toast(tr("menu.dish.saved"));
+    return;
+  }
+  if (form.getAttribute("id") === "copy-form") {
+    ev.preventDefault();
+    const from = form.getAttribute("data-from");
+    const to = String(new FormData(form).get("to") || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(to) || to === from) return toast(tr("menu.copy.same"));
+    const n = copyDay(state.menu, from, to);
+    if (!n) return toast(tr("menu.copy.nothing"));
+    ui.menuDate = to;
+    if (!save()) return;
+    ui.sheet = null;
+    toast(tr("menu.copy.done", { n, date: formatDate(to, { short: true }) }));
+    return;
+  }
+  if (form.getAttribute("id") === "slot-add-form") {
+    ev.preventDefault();
+    applySlotNames();
+    const name = String(new FormData(form).get("name") || "").trim().slice(0, 20);
+    if (!name) return toast(tr("menu.slots.needName"));
+    if (state.menu.slots.length >= MAX_SLOTS) return toast(tr("menu.slots.max"));
+    state.menu.slots.push({ id: uid("slot"), key: "", name });
+    ui.slotArm = "";
+    save();
+    render();
+    return;
+  }
+  if (form.getAttribute("id") === "recipe-form") {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    const name = String(fd.get("name") || "").trim().slice(0, 80);
+    if (!name) return toast(tr("recipe.err"));
+    const id = form.getAttribute("data-id");
+    const fields = {
+      name,
+      photo: ui.recipePhoto || "",
+      servings: String(fd.get("servings") || "").trim().slice(0, 20),
+      ingredients: splitLines(fd.get("ingredients")),
+      steps: splitLines(fd.get("steps"), 40, 400),
+      tags: splitTags(fd.get("tags")),
+      notes: String(fd.get("notes") || "").trim().slice(0, 800),
+      updatedAt: new Date().toISOString(),
+    };
+    const prev = state.recipes.slice();
+    const idx = state.recipes.findIndex((r) => r.id === id);
+    if (idx >= 0) state.recipes[idx] = { ...state.recipes[idx], ...fields };
+    else state.recipes.push(newRecipe({ id, ...fields }));
+    if (!save()) {
+      state.recipes = prev;
+      return;
+    }
+    ui.sheet = null;
+    ui.recipePhoto = "";
+    ui.recipeId = id;
+    toast(tr("recipe.saved"));
+    return;
+  }
+  if (form.getAttribute("id") === "recipe-shop-form") {
+    ev.preventDefault();
+    const h = helper();
+    const r = state.recipes.find((x) => x.id === form.getAttribute("data-id"));
+    if (!h || !r) return;
+    const fd = new FormData(form);
+    const picks = fd.getAll("ing").map(Number).filter((i) => r.ingredients[i]);
+    if (!picks.length) return toast(tr("recipe.shop.pickSome"));
+    let list = state.shopLists.find((l) => l.id === String(fd.get("list")));
+    if (!list) {
+      list = newShopList({ helperId: h.id, title: r.name, place: "market", date: today() });
+      state.shopLists.push(list);
+    }
+    const have = new Set(state.shopItems.filter((i) => i.listId === list.id).map((i) => catalogKey(i.name)));
+    let added = 0;
+    let skipped = 0;
+    for (const i of picks) {
+      const { name, qty } = parseIngredient(r.ingredients[i]);
+      if (!name) continue;
+      if (have.has(catalogKey(name))) {
+        skipped += 1;
+        continue;
+      }
+      have.add(catalogKey(name));
+      const cat = findCatalog(state, name);
+      state.shopItems.push(newShopItem({ listId: list.id, helperId: h.id, name, qty, suggestedPrice: cat ? cat.lastPrice : null }));
+      added += 1;
+    }
+    if (!save()) return;
+    ui.sheet = null;
+    ui.shopListId = list.id;
+    ui.shopCal = { year: Number(listDate(list).slice(0, 4)), month: Number(listDate(list).slice(5, 7)) - 1 };
+    toast(skipped ? tr("recipe.shop.addedSkip", { n: added, s: skipped, list: list.title }) : tr("recipe.shop.added", { n: added, list: list.title }));
+    setTab("shop-detail");
+    return;
+  }
+  if (form.getAttribute("id") === "consent-form") {
+    ev.preventDefault();
+    const err = document.getElementById("consent-err");
+    const fail = (key) => {
+      if (err) {
+        err.textContent = tr(key);
+        err.hidden = false;
+      }
+    };
+    if (!form.elements.agree?.checked) return fail("consent.err.agree");
+    if (!ui.sigData) return fail("consent.err.sign");
+    const p = state.payments.find((x) => x.id === form.getAttribute("data-pay"));
+    if (!p) return;
+    const prev = p.consent;
+    p.consent = { status: "confirmed", at: new Date().toISOString(), by: "in-person", signature: compressSignature() };
+    if (!save()) {
+      p.consent = prev;
+      return;
+    }
+    ui.sheet = null;
+    ui.sigData = "";
+    toast(tr("consent.saved"));
+    render();
+    return;
   }
   if (form.getAttribute("id") === "sh-form") {
     ev.preventDefault();
@@ -3103,8 +4762,10 @@ function onSubmit(ev) {
       title: String(fd.get("title") || "").trim(),
       place: String(fd.get("place") || "market"),
       note: String(fd.get("note") || "").trim(),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(fd.get("date") || "")) ? String(fd.get("date")) : today(),
     });
     state.shopLists.push(rec);
+    ui.shopCal = { year: Number(rec.date.slice(0, 4)), month: Number(rec.date.slice(5, 7)) - 1 };
     save();
     ui.sheet = null;
     ui.shopListId = rec.id;
@@ -3125,14 +4786,23 @@ function onSubmit(ev) {
       photo: String(fd.get("photo") || ""),
       bought: form.elements.bought?.checked,
       paidPrice: String(fd.get("paidPrice") || "") === "" ? "" : Number(fd.get("paidPrice")),
+      suggestedPrice: null,
     });
+    const priceEl = form.elements.paidPrice;
+    if (priceEl?.dataset.autofilled === "1" && !rec.bought && rec.paidPrice !== "") {
+      // pre-filled from last price but not bought yet: keep as a suggestion only
+      rec.suggestedPrice = rec.paidPrice;
+      rec.paidPrice = "";
+    }
     if (!rec.name) return toast(tr("toast.needItemName"));
     const idx = state.shopItems.findIndex((i) => i.id === rec.id);
     if (idx >= 0) state.shopItems[idx] = { ...state.shopItems[idx], ...rec };
     else state.shopItems.push(rec);
     if (rec.paidPrice !== "" && rec.paidPrice != null) {
       const list = state.shopLists.find((l) => l.id === listId);
-      recordCatalogPrice(state, rec.name, rec.paidPrice, today(), list?.place || "");
+      recordCatalogPrice(state, rec.name, rec.paidPrice, (list && listDate(list)) || today(), list?.place || "", { listId, itemId: rec.id });
+    } else {
+      removeCatalogEntry(state, rec.id);
     }
     save();
     ui.sheet = null;
@@ -3233,9 +4903,10 @@ function maybeNotify() {
   const t = today();
   const key = `fdh-notified-${t}`;
   if (sessionStorage.getItem(key)) return;
-  const items = state.helpers
-    .flatMap((h) => buildReminders(h, t, { arrangedRestDays: arrangedFor(h) }))
-    .filter((r) => isReminderVisible(r, state.reminderState, t) && ["expired", "critical", "soon"].includes(r.urgency));
+  const items = mergeReminders(
+    state.helpers.flatMap((h) => buildReminders(h, t, { arrangedRestDays: arrangedFor(h) })),
+    buildCustomReminders(state.customReminders, state.helpers, t).filter((r) => r.date <= t)
+  ).filter((r) => isReminderVisible(r, state.reminderState, t) && ["expired", "critical", "soon"].includes(r.urgency));
   if (!items.length) return;
   sessionStorage.setItem(key, "1");
   try {
@@ -3258,6 +4929,18 @@ function registerSW() {
   }
 }
 
+let titleBeforePrint = "";
+window.addEventListener("beforeprint", () => {
+  if (!ui.payslipId) return;
+  titleBeforePrint = document.title;
+  const h = helper();
+  const p = state.payments.find((x) => x.id === ui.payslipId);
+  document.title = `${tr("payslip.title")}-${h?.name || ""}-${p?.month || ""}`;
+});
+window.addEventListener("afterprint", () => {
+  if (titleBeforePrint) document.title = titleBeforePrint;
+  titleBeforePrint = "";
+});
 window.addEventListener("hashchange", () => {
   parseHash();
   render();
