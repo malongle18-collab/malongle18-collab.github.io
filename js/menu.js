@@ -1,7 +1,7 @@
 /** Meal plan (今日餐單) and recipes (菜譜): pure data helpers, no DOM. */
-import { compressImageFile } from "./share.js?v=15";
-import { getLang } from "./i18n.js?v=15";
-import { LIB_RECIPES } from "./recipes-lib.js?v=15";
+import { compressImageFile } from "./share.js?v=16";
+import { getLang } from "./i18n.js?v=16";
+import { LIB_RECIPES } from "./recipes-lib.js?v=16";
 
 export const DEFAULT_SLOT_KEYS = ["breakfast", "lunch", "dinner", "snack"];
 export const MAX_SLOTS = 12;
@@ -16,6 +16,26 @@ export const DIET_KEYS = ["pork", "beef", "alcohol", "fermented", "light", "hala
 export const CONTAINS_KEYS = ["pork", "beef", "alcohol", "fermented"];
 export const DEFAULT_DIET = { noPork: false, noBeef: false, noAlcohol: false, noFermented: false, halalOnly: false, lightOnly: false };
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
+export const MAX_RECIPE_PHOTOS = 6;
+
+export function isRecipePhoto(v) {
+  return /^data:image\//.test(String(v || ""));
+}
+
+/** Unique compressed data-URL photos on a recipe (photos[] plus legacy photo). */
+export function recipePhotosOf(r) {
+  const out = [];
+  const seen = new Set();
+  const add = (v) => {
+    const s = String(v || "");
+    if (!isRecipePhoto(s) || seen.has(s)) return;
+    seen.add(s);
+    out.push(s);
+  };
+  if (Array.isArray(r?.photos)) r.photos.forEach(add);
+  add(r?.photo);
+  return out.slice(0, MAX_RECIPE_PHOTOS);
+}
 
 function nid(prefix) {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return `${prefix}-${crypto.randomUUID().slice(0, 12)}`;
@@ -53,6 +73,7 @@ export function newRecipe(partial = {}) {
     diet: [],
     tags: [],
     photo: "",
+    photos: [],
     copyOf: "",
     sourceUrl: "",
     createdAt: now,
@@ -144,7 +165,8 @@ export function normalizeRecipes(raw) {
       category: CATEGORIES.includes(r.category) ? r.category : "other",
       prepMins: Math.max(0, Math.min(1440, Math.round(Number(r.prepMins) || 0))),
       difficulty: DIFFICULTIES.includes(r.difficulty) ? r.difficulty : "easy",
-      photo: /^data:image\//.test(String(r.photo || "")) ? String(r.photo) : "",
+      photo: recipePhotosOf(r)[0] || "",
+      photos: recipePhotosOf(r),
       servings: str(r.servings, 20),
       ingredients: normIngredients(r.ingredients),
       steps: normSteps(r.steps),
@@ -505,19 +527,21 @@ export function menuForShare(menu, fromISO, untilISO) {
 export async function recipesForShare(recipes, { withPhotos = true } = {}) {
   const out = [];
   for (const r of recipes || []) {
-    let photo = "";
-    if (withPhotos && r.photo) {
-      try {
-        const blob = await (await fetch(r.photo)).blob();
-        const small = await compressImageFile(blob, { maxSize: 360, quality: 0.5 });
-        photo = small.length < r.photo.length ? small : r.photo;
-      } catch {
-        photo = "";
+    const photos = [];
+    if (withPhotos) {
+      for (const src of recipePhotosOf(r)) {
+        try {
+          const blob = await (await fetch(src)).blob();
+          const small = await compressImageFile(blob, { maxSize: 360, quality: 0.5 });
+          photos.push(small.length < src.length ? small : src);
+        } catch {
+          /* drop unreadable photos */
+        }
       }
     }
     out.push({
       id: r.id, no: r.no, nameZh: r.nameZh, nameEn: r.nameEn, name: r.name, category: r.category, prepMins: r.prepMins, difficulty: r.difficulty,
-      photo, servings: r.servings, ingredients: r.ingredients, steps: r.steps, tips: r.tips, diet: r.diet, tags: r.tags, copyOf: r.copyOf, sourceUrl: r.sourceUrl || "",
+      photo: photos[0] || "", photos, servings: r.servings, ingredients: r.ingredients, steps: r.steps, tips: r.tips, diet: r.diet, tags: r.tags, copyOf: r.copyOf, sourceUrl: r.sourceUrl || "",
     });
   }
   return out;

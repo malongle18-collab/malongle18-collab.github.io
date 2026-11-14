@@ -1,9 +1,9 @@
-import { getLang, t } from "./i18n.js?v=15";
-import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=15";
-import { cleanIdNumber, normalizeDocs } from "./docs.js?v=15";
-import { defaultContractEnd } from "./rules.js?v=15";
-import { todayISO } from "./dates.js?v=15";
-import { emptyMenu, normalizeDiet, normalizeMenu, normalizeRecipes } from "./menu.js?v=15";
+import { getLang, t } from "./i18n.js?v=16";
+import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=16";
+import { cleanIdNumber, normalizeDocs } from "./docs.js?v=16";
+import { defaultContractEnd } from "./rules.js?v=16";
+import { todayISO } from "./dates.js?v=16";
+import { emptyMenu, normalizeDiet, normalizeMenu, normalizeRecipes } from "./menu.js?v=16";
 
 export const STORAGE_KEY = "fdh-employer-v1";
 
@@ -104,7 +104,10 @@ function migrate(raw) {
   state.workRules = Array.isArray(state.workRules) ? state.workRules : [];
   state.shopLists = (Array.isArray(state.shopLists) ? state.shopLists : [])
     .filter((l) => l && typeof l === "object" && l.id)
-    .map((l) => ({ ...l, date: listDate(l) || todayISO() }));
+    .map((l) => {
+      if (l.date === "" || l.date === null) return { ...l, date: "" };
+      return { ...l, date: listDate(l) || todayISO() };
+    });
   state.shopItems = (Array.isArray(state.shopItems) ? state.shopItems : []).map(normalizeShopItem);
   state.priceCatalog = normalizeCatalog(state.priceCatalog);
   state.recipes = normalizeRecipes(state.recipes);
@@ -311,10 +314,12 @@ export function localDateOf(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/** Shopping date of a list (explicit date, else completed/created day). */
+/** Shopping date of a list. An explicit empty date stays empty; legacy lists without a date field fall back to completed/created day. */
 export function listDate(list) {
-  if (list && /^\d{4}-\d{2}-\d{2}$/.test(String(list.date || ""))) return list.date;
-  return localDateOf(list?.completedAt) || localDateOf(list?.createdAt) || "";
+  if (!list) return "";
+  if (list.date === "" || list.date === null) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(list.date || ""))) return list.date;
+  return localDateOf(list.completedAt) || localDateOf(list.createdAt) || "";
 }
 
 /** Latest-dated entry of a price history row. */
