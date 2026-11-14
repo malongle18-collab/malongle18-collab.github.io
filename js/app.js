@@ -83,6 +83,8 @@ import {
   newPayment,
   newShopItem,
   newShopList,
+  isRecipeParent,
+  isShopLeaf,
   newWorkRule,
   newWorkTask,
   recordCatalogPrice,
@@ -487,6 +489,53 @@ function listsFor(h) {
 
 function itemsForList(listId) {
   return state.shopItems.filter((i) => i.listId === listId);
+}
+
+function shopLeaves(items) {
+  return items.filter(isShopLeaf);
+}
+
+function shopForest(items) {
+  const kids = new Map();
+  for (const it of items) {
+    if (!it.parentId) continue;
+    if (!kids.has(it.parentId)) kids.set(it.parentId, []);
+    kids.get(it.parentId).push(it);
+  }
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const used = new Set();
+  const byTime = (a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")) || String(a.id).localeCompare(String(b.id));
+  const tops = items.filter((i) => isRecipeParent(i) || !i.parentId).slice().sort(byTime);
+  const nodes = [];
+  for (const t of tops) {
+    if (isRecipeParent(t)) {
+      const children = (kids.get(t.id) || []).slice().sort(byTime);
+      children.forEach((c) => used.add(c.id));
+      used.add(t.id);
+      nodes.push({ type: "recipe", parent: t, children });
+    } else {
+      used.add(t.id);
+      nodes.push({ type: "item", item: t });
+    }
+  }
+  for (const it of items) {
+    if (used.has(it.id) || isRecipeParent(it)) continue;
+    const parent = it.parentId ? byId.get(it.parentId) : null;
+    if (parent && isRecipeParent(parent)) continue;
+    nodes.push({ type: "item", item: it });
+  }
+  return nodes;
+}
+
+function leafProgress(items) {
+  const leaves = shopLeaves(items);
+  return { done: leaves.filter((i) => i.bought).length, total: leaves.length };
+}
+
+function parentTickState(children) {
+  if (!children.length) return { checked: false, indeterminate: false, done: 0, total: 0 };
+  const done = children.filter((c) => c.bought).length;
+  return { checked: done === children.length, indeterminate: done > 0 && done < children.length, done, total: children.length };
 }
 
 function scheduleLabel(task) {
@@ -1943,7 +1992,7 @@ function shopCtx() {
 /** Same-name item marked bought in an earlier list within the "recent" window (or null). */
 function recentBuyFor(item, ctx) {
   const windowDays = prefsData().recentBuyDays;
-  if (!windowDays || !item || item.bought) return null;
+  if (!windowDays || !item || item.bought || isRecipeParent(item)) return null;
   const key = catalogKey(item.name);
   if (!key) return null;
   const mine = ctx.lists.find((l) => l.id === item.listId);
@@ -1985,13 +2034,62 @@ function shopSettingsCard(ro) {
 }
 
 const CARD_MAX_ITEMS = 8;
+
+function leafTickAction() {
+  return role === "helper" ? "h-item-bought" : "item-tick";
+}
+
+function parentTickAction() {
+  return role === "helper" ? "h-item-tick-group" : "item-tick-group";
+}
+
+function tickLeafHtml(it, ctx) {
+  return `<li class="tick-item ${it.bought ? "is-bought" : ""}" data-item-row>
+        <label class="tick-label"><input type="checkbox" data-tick="leaf" data-action="${leafTickAction()}" data-id="${escapeHtml(it.id)}" ${it.bought ? "checked" : ""}>
+          <span class="tick-text"><span class="tick-name">${escapeHtml(it.name)}${it.qty ? `<small>${escapeHtml(it.qty)}</small>` : ""}</span>${it.alt ? `<small class="alt">${escapeHtml(it.alt)}</small>` : ""}</span></label>
+        ${recentBadge(it, ctx)}
+      </li>`;
+}
+
+function tickGroupHtml(parent, children, ctx, hiddenChildDone = 0, hiddenChildTotal = 0) {
+  const visDone = children.filter((c) => c.bought).length;
+  const done = visDone + hiddenChildDone;
+  const total = children.length + hiddenChildTotal;
+  const checked = total > 0 && done === total;
+  return `<li class="tick-group ${checked ? "is-bought" : ""}" data-recipe-group="${escapeHtml(parent.id)}" data-hidden-child-done="${hiddenChildDone}" data-hidden-child-total="${hiddenChildTotal}">
+        <div class="tick-item is-parent">
+          <label class="tick-label"><input type="checkbox" data-tick="parent" data-action="${parentTickAction()}" data-id="${escapeHtml(parent.id)}" ${checked ? "checked" : ""}>
+            <span class="tick-text"><span class="tick-name">${escapeHtml(parent.name)}<small data-group-prog>${tr("shop.recipe.progress", { done, total })}</small></span>${parent.note ? `<small class="alt">${escapeHtml(parent.note)}</small>` : ""}</span></label>
+        </div>
+        <ul class="tick-sub">${children.map((c) => tickLeafHtml(c, ctx)).join("")}</ul>
+      </li>`;
+}
+
 function shopCard(list, items, detailTab, ctx) {
-  const bought = items.filter((i) => i.bought).length;
-  const shown = items.slice(0, CARD_MAX_ITEMS);
-  const hiddenDone = items.slice(CARD_MAX_ITEMS).filter((i) => i.bought).length;
-  const tickAction = role === "helper" ? "h-item-bought" : "item-tick";
-  const pct = items.length ? Math.round((bought / items.length) * 100) : 0;
-  return `<article class="card shop-card" data-shop-card data-total="${items.length}" data-hidden-done="${hiddenDone}">
+  const { done: bought, total } = leafProgress(items);
+  const forest = shopForest(items);
+  const chunks = [];
+  const renderedIds = new Set();
+  let used = 0;
+  for (const node of forest) {
+    if (used >= CARD_MAX_ITEMS) break;
+    if (node.type === "recipe") {
+      const room = CARD_MAX_ITEMS - used;
+      const kids = node.children.slice(0, room);
+      const hiddenKids = node.children.slice(room);
+      kids.forEach((c) => renderedIds.add(c.id));
+      chunks.push(tickGroupHtml(node.parent, kids, ctx, hiddenKids.filter((c) => c.bought).length, hiddenKids.length));
+      used += kids.length;
+    } else {
+      renderedIds.add(node.item.id);
+      chunks.push(tickLeafHtml(node.item, ctx));
+      used += 1;
+    }
+  }
+  const hiddenDone = shopLeaves(items).filter((i) => !renderedIds.has(i.id) && i.bought).length;
+  const hiddenTotal = shopLeaves(items).filter((i) => !renderedIds.has(i.id)).length;
+  const pct = total ? Math.round((bought / total) * 100) : 0;
+  return `<article class="card shop-card" data-shop-card data-total="${total}" data-hidden-done="${hiddenDone}">
     <button class="shop-card-head" type="button" data-go="${detailTab}" data-list="${list.id}">
       <span class="grow">
         <span class="title">${escapeHtml(list.title || placeLabel(list.place))}</span>
@@ -2002,17 +2100,9 @@ function shopCard(list, items, detailTab, ctx) {
     </button>
     ${
       items.length
-        ? `<div class="shop-prog-row"><span class="shop-prog" data-prog>${tr("shop.card.progress", { done: bought, total: items.length })}</span><i class="prog-bar"><b data-prog-bar style="width:${pct}%"></b></i></div>
-    <ul class="tick-list">${shown
-      .map(
-        (it) => `<li class="tick-item ${it.bought ? "is-bought" : ""}" data-item-row>
-        <label class="tick-label"><input type="checkbox" data-tick data-action="${tickAction}" data-id="${escapeHtml(it.id)}" ${it.bought ? "checked" : ""}>
-          <span class="tick-text"><span class="tick-name">${escapeHtml(it.name)}${it.qty ? `<small>${escapeHtml(it.qty)}</small>` : ""}</span>${it.alt ? `<small class="alt">${escapeHtml(it.alt)}</small>` : ""}</span></label>
-        ${recentBadge(it, ctx)}
-      </li>`
-      )
-      .join("")}</ul>
-    ${items.length > CARD_MAX_ITEMS ? `<button class="linkish tick-more" type="button" data-go="${detailTab}" data-list="${list.id}">${tr("shop.card.more", { n: items.length - CARD_MAX_ITEMS })}</button>` : ""}`
+        ? `<div class="shop-prog-row"><span class="shop-prog" data-prog>${tr("shop.card.progress", { done: bought, total })}</span><i class="prog-bar"><b data-prog-bar style="width:${pct}%"></b></i></div>
+    <ul class="tick-list">${chunks.join("")}</ul>
+    ${hiddenTotal ? `<button class="linkish tick-more" type="button" data-go="${detailTab}" data-list="${list.id}">${tr("shop.card.more", { n: hiddenTotal })}</button>` : ""}`
         : `<p class="tiny muted" style="margin:0.5rem 0 0">${tr("shop.noItems")}</p>`
     }
   </article>`;
@@ -2096,9 +2186,57 @@ function itemRecentHint(name, itemId, listId) {
 function catalogNameOptions() {
   const names = new Map();
   for (const c of state.priceCatalog || []) names.set(catalogKey(c.name), c.name);
-  for (const it of state.shopItems || []) if (it.name && !names.has(catalogKey(it.name))) names.set(catalogKey(it.name), it.name);
+  for (const it of state.shopItems || []) if (it.name && !isRecipeParent(it) && !names.has(catalogKey(it.name))) names.set(catalogKey(it.name), it.name);
   return Array.from(names.values())
     .map((n) => `<option value="${escapeHtml(n)}">`)
+    .join("");
+}
+
+function shopDetailLeafHtml(item, opts) {
+  const { hint = "", extra = "", tickAction, tickKind = "leaf" } = opts;
+  return `<div class="shop-item ${item.bought ? "is-bought" : ""} ${item.parentId ? "is-child" : ""}" data-item-row>
+                  <div class="thumb">${item.photo ? `<img src="${item.photo}" alt="">` : icon("image", { size: 22 })}</div>
+                  <div>
+                    <label class="tick-label tick-inline"><input type="checkbox" data-tick="${tickKind}" data-action="${tickAction}" data-id="${item.id}" ${item.bought ? "checked" : ""}>
+                    <span class="title" style="font-weight:650">${escapeHtml(item.name)}${item.qty ? tr("log.sep") + escapeHtml(item.qty) : ""}</span></label>
+                    ${item.alt ? `<div class="tiny muted">${escapeHtml(item.alt)}</div>` : ""}
+                    ${item.note ? `<div class="tiny muted">${escapeHtml(item.note)}</div>` : ""}
+                    ${recentBadge(item, shopCtx())}
+                    ${hint ? `<div class="price-hint">${hint}</div>` : ""}
+                    <div class="chip-row" style="margin-top:0.4rem">
+                      ${item.bought ? `<span class="tag ok">${tr("shop.bought")}</span>` : `<span class="tag">${tr("shop.notBought")}</span>`}
+                      ${item.paidPrice !== "" && item.paidPrice != null ? `<span class="tag brass">${tr("shop.thisTime", { price: formatMoney(item.paidPrice) })}</span>` : ""}
+                    </div>
+                    ${extra}
+                  </div>
+                </div>`;
+}
+
+function shopDetailGroupHtml(parent, children, leafHtml) {
+  const st = parentTickState(children);
+  return `<section class="shop-group ${st.checked ? "is-bought" : ""}" data-recipe-group="${escapeHtml(parent.id)}">
+      <div class="shop-item is-parent">
+        <div class="thumb" aria-hidden="true">${icon("utensils", { size: 22 })}</div>
+        <div>
+          <label class="tick-label tick-inline"><input type="checkbox" data-tick="parent" data-action="${parentTickAction()}" data-id="${escapeHtml(parent.id)}" ${st.checked ? "checked" : ""}>
+          <span class="title" style="font-weight:650">${escapeHtml(parent.name)}</span></label>
+          <div class="tiny muted">${parent.note ? escapeHtml(parent.note) + tr("log.sep") : ""}<span data-group-prog>${tr("shop.recipe.progress", { done: st.done, total: st.total })}</span></div>
+          ${role === "helper" ? "" : `<div class="btn-row" style="margin-top:0.35rem"><button class="btn secondary" type="button" data-action="item-del" data-id="${escapeHtml(parent.id)}" style="min-height:2.4rem;padding:0.3rem 0.7rem">${tr("shop.recipe.delete")}</button></div>`}
+        </div>
+      </div>
+      <div class="shop-children">${children.map(leafHtml).join("")}</div>
+    </section>`;
+}
+
+function shopDetailForestHtml(items, leafOptsFor) {
+  const forest = shopForest(items);
+  if (!forest.length) return `<div class="card"><p class="muted" style="margin:0">${tr("shop.items.none")}</p></div>`;
+  return forest
+    .map((node) => {
+      if (node.type === "recipe") return shopDetailGroupHtml(node.parent, node.children, (item) => shopDetailLeafHtml(item, leafOptsFor(item)));
+      /* keep leftover meal group headings for ungrouped legacy items */
+      return shopDetailLeafHtml(node.item, leafOptsFor(node.item));
+    })
     .join("");
 }
 
@@ -2143,37 +2281,16 @@ function viewShopDetail() {
       }
     </div>
     <div style="margin-top:0.5rem">
-      ${
-        items.length
-          ? items
-              .map((item, idx) => {
-                const cat = findCatalog(state, item.name);
-                const hint = cat
-                  ? `<button type="button" class="price-hint-btn" data-action="price-history" data-key="${escapeHtml(cat.key)}">${lastPriceText(cat)} <span class="hist-link">${tr("shop.hist.link")}</span></button>`
-                  : "";
-                const head = item.group && item.group !== (items[idx - 1]?.group || "") ? `<h3 class="group-title">${escapeHtml(item.group)}</h3>` : "";
-                return `${head}<div class="shop-item ${item.bought ? "is-bought" : ""}" data-item-row>
-                  <div class="thumb">${item.photo ? `<img src="${item.photo}" alt="">` : icon("image", { size: 22 })}</div>
-                  <div>
-                    <label class="tick-label tick-inline"><input type="checkbox" data-tick data-action="item-tick" data-id="${item.id}" ${item.bought ? "checked" : ""}>
-                    <span class="title" style="font-weight:650">${escapeHtml(item.name)}${item.qty ? tr("log.sep") + escapeHtml(item.qty) : ""}</span></label>
-                    ${item.alt ? `<div class="tiny muted">${escapeHtml(item.alt)}</div>` : ""}
-                    ${item.note ? `<div class="tiny muted">${escapeHtml(item.note)}</div>` : ""}
-                    ${recentBadge(item, shopCtx())}
-                    ${hint ? `<div class="price-hint">${hint}</div>` : ""}
-                    <div class="chip-row" style="margin-top:0.4rem">
-                      ${item.bought ? `<span class="tag ok">${tr("shop.bought")}</span>` : `<span class="tag">${tr("shop.notBought")}</span>`}
-                      ${item.paidPrice !== "" && item.paidPrice != null ? `<span class="tag brass">${tr("shop.thisTime", { price: formatMoney(item.paidPrice) })}</span>` : ""}
-                    </div>
-                    <div class="btn-row" style="margin-top:0.35rem">
+      ${shopDetailForestHtml(items, (item) => {
+        const cat = findCatalog(state, item.name);
+        const hint = cat
+          ? `<button type="button" class="price-hint-btn" data-action="price-history" data-key="${escapeHtml(cat.key)}">${lastPriceText(cat)} <span class="hist-link">${tr("shop.hist.link")}</span></button>`
+          : "";
+        const extra = `<div class="btn-row" style="margin-top:0.35rem">
                       <button class="btn secondary" type="button" data-action="item-edit" data-id="${item.id}" style="min-height:2.4rem;padding:0.3rem 0.7rem">${tr("shop.editItem")}</button>
-                    </div>
-                  </div>
-                </div>`;
-              })
-              .join("")
-          : `<div class="card"><p class="muted" style="margin:0">${tr("shop.items.none")}</p></div>`
-      }
+                    </div>`;
+        return { hint, extra, tickAction: "item-tick" };
+      })}
     </div>
     <div class="btn-row">
       <button class="btn danger" type="button" data-action="shop-del" data-list="${list.id}">${tr("shop.delete")}</button>
@@ -2977,33 +3094,19 @@ function viewHelperShopDetail() {
     <button class="linkish back-row" type="button" data-go="h-shop">${tr("shop.back")}</button>
     <h1 class="screen-title">${escapeHtml(list.title || placeLabel(list.place))}</h1>
     <p class="lede">${listDateLabel(list)}${tr("log.sep")}${placeLabel(list.place)}${list.note ? tr("log.sep") + escapeHtml(list.note) : ""}${tr("period")}</p>
-    ${items
-      .map((item, idx) => {
-        const cat = catOf(item.name);
-        const head = item.group && item.group !== (items[idx - 1]?.group || "") ? `<h3 class="group-title">${escapeHtml(item.group)}</h3>` : "";
-        const hint = cat
-          ? `<button type="button" class="price-hint-btn" data-action="price-history" data-key="${escapeHtml(cat.key)}">${tr("hshop.lastPrice", { price: formatMoney(cat.lastPrice) })} <span class="hist-link">${tr("shop.hist.link")}</span></button>`
-          : tr("hshop.afterBuy");
-        return `${head}<div class="shop-item ${item.bought ? "is-bought" : ""}" data-item-row>
-          <div class="thumb">${item.photo ? `<img src="${item.photo}" alt="${escapeHtml(item.name)}">` : icon("image", { size: 22 })}</div>
-          <div>
-            <div class="title" style="font-weight:650">${escapeHtml(item.name)}${item.qty ? tr("log.sep") + escapeHtml(item.qty) : ""}</div>
-            ${item.alt ? `<div class="tiny muted">${escapeHtml(item.alt)}</div>` : ""}
-            ${item.note ? `<div class="tiny muted">${escapeHtml(item.note)}</div>` : ""}
-            ${recentBadge(item, shopCtx())}
-            <div class="price-hint">${hint}</div>
-            <label class="switch-field">
-              <span>${tr("hshop.got")}</span>
-              <span class="switch"><input type="checkbox" data-tick data-action="h-item-bought" data-id="${item.id}" ${item.bought ? "checked" : ""}><span></span></span>
-            </label>
-            <label class="field" style="margin:0">
+    ${items.length
+      ? shopDetailForestHtml(items, (item) => {
+          const cat = catOf(item.name);
+          const hint = cat
+            ? `<button type="button" class="price-hint-btn" data-action="price-history" data-key="${escapeHtml(cat.key)}">${tr("hshop.lastPrice", { price: formatMoney(cat.lastPrice) })} <span class="hist-link">${tr("shop.hist.link")}</span></button>`
+            : tr("hshop.afterBuy");
+          const extra = `<label class="field" style="margin:0.4rem 0 0">
               <span>${tr("hshop.priceLabel")}</span>
               <input type="number" inputmode="decimal" min="0" step="0.1" data-action="h-item-price" data-id="${item.id}" value="${item.paidPrice ?? ""}" placeholder="${cat ? cat.lastPrice : ""}">
-            </label>
-          </div>
-        </div>`;
-      })
-      .join("") || `<div class="card"><p class="muted" style="margin:0">${tr("hshop.items.none")}</p></div>`}
+            </label>`;
+          return { hint, extra, tickAction: "h-item-bought" };
+        })
+      : `<div class="card"><p class="muted" style="margin:0">${tr("hshop.items.none")}</p></div>`}
     ${sameDeviceWriteback() ? `<p class="tiny muted">${tr("hshop.writeback.same")}</p>` : `<p class="tiny muted">${tr("hshop.writeback.other")}</p>`}
   `;
 }
@@ -3413,6 +3516,18 @@ function viewMenu() {
     ${disclaimer()}`;
 }
 
+function menuShopAutoTitle(iso) {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(String(iso || "")) ? iso : today();
+  return tr("menu.gen.defaultTitle", { date: formatDate(d, { short: true }) });
+}
+
+function isMenuShopAutoTitle(value) {
+  const prefix = tr("menu.gen.defaultTitle", { date: "" });
+  if (typeof value !== "string" || !prefix || !value.startsWith(prefix)) return false;
+  const rest = value.slice(prefix.length).trim();
+  return /^\d{1,2}月\d{1,2}日$/.test(rest) || /^\d{1,2} [A-Za-z]{3}$/.test(rest);
+}
+
 function menuHomeCard() {
   const { menu, recipes, ro } = menuData();
   const t = today();
@@ -3679,6 +3794,83 @@ function itemFromAgg(row, listId, helperId) {
   });
 }
 
+function ingDisplay(ing) {
+  const L = getLang() === "en" ? "en" : "zh";
+  const name = (L === "en" ? ing.en || ing.zh : ing.zh || ing.en) || "";
+  const alt = L === "en" ? (ing.en ? ing.zh : "") : ing.en || "";
+  const qty = L === "en" ? ing.qtyEn || ing.qty : ing.qty || ing.qtyEn;
+  return { name, alt: alt && alt !== name ? alt : "", qty: qty || "" };
+}
+
+function ensureRecipeParent(list, recipe) {
+  const existing = state.shopItems.find((i) => i.listId === list.id && i.kind === "recipe" && i.recipeId === recipe.id);
+  if (existing) return existing;
+  const h = state.helpers.find((x) => x.id === list.helperId) || helper();
+  const parent = newShopItem({
+    listId: list.id,
+    helperId: h?.id || list.helperId || "",
+    name: recipeName(recipe),
+    kind: "recipe",
+    recipeId: recipe.id,
+    parentId: "",
+    note: recipe.no ? recipeNoLabel(recipe) : "",
+  });
+  state.shopItems.push(parent);
+  return parent;
+}
+
+/** Add a recipe as a parent row with its ingredients nested underneath. */
+function addRecipeIngredientsToList(list, recipe, ingredients) {
+  const parent = ensureRecipeParent(list, recipe);
+  const have = new Set(state.shopItems.filter((i) => i.parentId === parent.id).map((i) => catalogKey(i.name)));
+  let added = 0;
+  let skipped = 0;
+  const fresh = [];
+  for (const ing of ingredients || []) {
+    const { name, alt, qty } = ingDisplay(ing);
+    if (!name) continue;
+    const k = catalogKey(name);
+    if (have.has(k)) {
+      skipped += 1;
+      continue;
+    }
+    have.add(k);
+    const cat = findCatalog(state, name);
+    const it = newShopItem({
+      listId: list.id,
+      helperId: parent.helperId,
+      name,
+      alt,
+      qty,
+      kind: "ing",
+      recipeId: recipe.id,
+      parentId: parent.id,
+      suggestedPrice: cat ? cat.lastPrice : null,
+    });
+    state.shopItems.push(it);
+    fresh.push(it);
+    added += 1;
+  }
+  if (!state.shopItems.some((i) => i.parentId === parent.id)) {
+    state.shopItems = state.shopItems.filter((i) => i.id !== parent.id);
+  }
+  const recent = fresh.filter((it) => recentBuyFor(it, shopCtx())).length;
+  return { added, skipped, recent };
+}
+
+function addRecipeMapToList(list, recipeMap) {
+  let added = 0;
+  let skipped = 0;
+  let recent = 0;
+  for (const { recipe, ingredients } of recipeMap) {
+    const res = addRecipeIngredientsToList(list, recipe, ingredients);
+    added += res.added;
+    skipped += res.skipped;
+    recent += res.recent;
+  }
+  return { added, skipped, recent };
+}
+
 /** Add merged ingredients of the given recipes to a list. Returns { added, skipped, recent }. */
 function addAggToList(list, rows) {
   const h = state.helpers.find((x) => x.id === list.helperId) || helper();
@@ -3706,12 +3898,12 @@ function addAggToList(list, rows) {
 
 function addRecipesToList(list, ids) {
   const recs = allRecipes(state.recipes);
-  const entries = [];
+  const recipeMap = [];
   for (const id of ids) {
     const r = recs.find((x) => x.id === id);
-    if (r) entries.push(...recipeEntries(r));
+    if (r) recipeMap.push({ recipe: r, ingredients: r.ingredients });
   }
-  return addAggToList(list, aggregateIngredients(entries));
+  return addRecipeMapToList(list, recipeMap);
 }
 
 function addResultToast(res, list) {
@@ -3931,8 +4123,8 @@ function menuSheetBody(sheet) {
             })
             .join("")}</div>
         </div>
-        <label class="field"><span>${tr("sheet.list.name")}</span><input name="title" required maxlength="80" value="${escapeHtml(tr("menu.gen.defaultTitle", { from: formatDate(days[0], { short: true }), to: formatDate(days[6], { short: true }) }))}"></label>
-        <label class="field"><span>${tr("shop.date")}</span><input type="date" name="date" required value="${escapeHtml(t)}"></label>
+        <label class="field"><span>${tr("sheet.list.name")}</span><input name="title" required maxlength="80" data-autofill="menu-shop-title" value="${escapeHtml(menuShopAutoTitle(t))}"></label>
+        <label class="field"><span>${tr("shop.date")}</span><input type="date" name="date" required value="${escapeHtml(t)}" data-action="gen-shop-date"></label>
         <label class="switch-field">
           <span><strong>${tr("menu.gen.group")}</strong><span class="hint">${tr("menu.gen.group.hint")}</span></span>
           <span class="switch"><input type="checkbox" name="group" checked><span></span></span>
@@ -4362,6 +4554,7 @@ function bindHelperContractDates() {
 
 function bindAfterRender() {
   bindHelperContractDates();
+  syncAllRecipeGroups();
   const form = document.getElementById("task-form");
   const schedule = form?.elements?.schedule;
   if (schedule) {
@@ -4453,13 +4646,46 @@ function collectHelperForm(form) {
   });
 }
 
+function syncRecipeGroupDom(group) {
+  if (!group) return;
+  const parent = group.querySelector('input[data-tick="parent"]');
+  const leaves = [...group.querySelectorAll('input[data-tick="leaf"]')];
+  const hiddenDone = Number(group.dataset.hiddenChildDone) || 0;
+  const hiddenTotal = Number(group.dataset.hiddenChildTotal) || 0;
+  const visDone = leaves.filter((i) => i.checked).length;
+  const done = visDone + hiddenDone;
+  const total = leaves.length + hiddenTotal;
+  if (parent) {
+    parent.checked = total > 0 && done === total;
+    parent.indeterminate = done > 0 && done < total;
+  }
+  group.classList.toggle("is-bought", total > 0 && done === total);
+  const slot = group.querySelector("[data-group-prog]");
+  if (slot) slot.textContent = tr("shop.recipe.progress", { done, total });
+}
+
+function syncAllRecipeGroups() {
+  document.querySelectorAll("[data-recipe-group]").forEach(syncRecipeGroupDom);
+}
+
 /** After ticking an item: update row state and the card's 3/8 progress without a full re-render. */
 function refreshShopDom(el) {
-  el.closest("[data-item-row]")?.classList.toggle("is-bought", el.checked);
+  const group = el.closest("[data-recipe-group]");
+  if (el.getAttribute("data-tick") === "parent" && group) {
+    const on = el.checked;
+    el.indeterminate = false;
+    for (const leaf of group.querySelectorAll('input[data-tick="leaf"]')) {
+      leaf.checked = on;
+      leaf.closest("[data-item-row]")?.classList.toggle("is-bought", on);
+    }
+  } else {
+    el.closest("[data-item-row]")?.classList.toggle("is-bought", el.checked);
+  }
+  if (group) syncRecipeGroupDom(group);
   const card = el.closest("[data-shop-card]");
   if (!card) return;
   const total = Number(card.dataset.total) || 0;
-  const done = (Number(card.dataset.hiddenDone) || 0) + card.querySelectorAll("input[data-tick]:checked").length;
+  const done = (Number(card.dataset.hiddenDone) || 0) + card.querySelectorAll('input[data-tick="leaf"]:checked').length;
   const prog = card.querySelector("[data-prog]");
   if (prog) prog.textContent = tr("shop.card.progress", { done, total });
   const bar = card.querySelector("[data-prog-bar]");
@@ -5118,7 +5344,16 @@ async function onClick(ev) {
     return;
   }
   if (action === "item-del") {
-    state.shopItems = state.shopItems.filter((i) => i.id !== id);
+    const target = state.shopItems.find((i) => i.id === id);
+    const drop = new Set([id]);
+    if (target && isRecipeParent(target)) {
+      for (const i of state.shopItems) if (i.parentId === id) drop.add(i.id);
+    }
+    state.shopItems = state.shopItems.filter((i) => !drop.has(i.id));
+    const parentId = target?.parentId;
+    if (parentId && !state.shopItems.some((i) => i.parentId === parentId)) {
+      state.shopItems = state.shopItems.filter((i) => i.id !== parentId);
+    }
     removeCatalogEntry(state, id);
     save();
     ui.sheet = null;
@@ -5332,6 +5567,15 @@ async function onClick(ev) {
 async function onChange(ev) {
   const el = ev.target;
   const action = el.getAttribute("data-action");
+  if (action === "gen-shop-date") {
+    const form = el.closest("#gen-form");
+    const title = form?.elements?.title;
+    const iso = String(el.value || "");
+    if (title && /^\d{4}-\d{2}-\d{2}$/.test(iso) && isMenuShopAutoTitle(title.value)) {
+      title.value = menuShopAutoTitle(iso);
+    }
+    return;
+  }
   if (action === "ui-pref") {
     const group = el.getAttribute("data-group");
     const key = el.getAttribute("data-key");
@@ -5477,6 +5721,19 @@ async function onChange(ev) {
     }
     return;
   }
+  if (action === "h-item-tick-group") {
+    const p = sessionPayload();
+    if (!p) return;
+    const parent = (p.shopItems || []).find((i) => i.id === el.getAttribute("data-id"));
+    if (!parent) return;
+    const on = el.checked;
+    parent.bought = on;
+    for (const it of p.shopItems) if (it.parentId === parent.id) it.bought = on;
+    persistSessionPayload();
+    writeShopBackToEmployer();
+    refreshShopDom(el);
+    return;
+  }
   if (action === "h-item-bought" || action === "h-item-price") {
     const p = sessionPayload();
     if (!p) return;
@@ -5484,6 +5741,11 @@ async function onChange(ev) {
     if (!item) return;
     if (action === "h-item-bought") {
       item.bought = el.checked;
+      if (item.parentId) {
+        const kids = (p.shopItems || []).filter((i) => i.parentId === item.parentId);
+        const parent = (p.shopItems || []).find((i) => i.id === item.parentId);
+        if (parent) parent.bought = kids.length > 0 && kids.every((k) => k.bought);
+      }
       refreshShopDom(el);
     }
     if (action === "h-item-price") item.paidPrice = el.value === "" ? "" : Number(el.value);
@@ -5491,10 +5753,25 @@ async function onChange(ev) {
     writeShopBackToEmployer();
     return;
   }
+  if (action === "item-tick-group" && role !== "helper") {
+    const parent = state.shopItems.find((i) => i.id === el.getAttribute("data-id"));
+    if (!parent) return;
+    const on = el.checked;
+    parent.bought = on;
+    for (const it of state.shopItems) if (it.parentId === parent.id) it.bought = on;
+    save();
+    refreshShopDom(el);
+    return;
+  }
   if (action === "item-tick" && role !== "helper") {
     const item = state.shopItems.find((i) => i.id === el.getAttribute("data-id"));
     if (!item) return;
     item.bought = el.checked;
+    if (item.parentId) {
+      const kids = state.shopItems.filter((i) => i.parentId === item.parentId);
+      const parent = state.shopItems.find((i) => i.id === item.parentId);
+      if (parent) parent.bought = kids.length > 0 && kids.every((k) => k.bought);
+    }
     save();
     refreshShopDom(el);
     return;
@@ -5787,9 +6064,7 @@ function onSubmit(ev) {
       list = newShopList({ helperId: h.id, title: recipeName(r), place: "market", date: today() });
       state.shopLists.push(list);
     }
-    const dish = { key: r.id, no: r.no, name: recipeName(r) };
-    const rowsAgg = aggregateIngredients(picks.map((i) => ({ ing: r.ingredients[i], dish, group: "" })));
-    const res = addAggToList(list, rowsAgg);
+    const res = addRecipeIngredientsToList(list, r, picks.map((i) => r.ingredients[i]));
     if (!save()) return;
     ui.sheet = null;
     ui.shopListId = list.id;
@@ -5823,9 +6098,17 @@ function onSubmit(ev) {
     }
     if (!entries.length) return toast(tr("menu.gen.none"));
     const dateVal = /^\d{4}-\d{2}-\d{2}$/.test(String(fd.get("date") || "")) ? String(fd.get("date")) : today();
-    const list = newShopList({ helperId: h.id, title: String(fd.get("title") || "").trim() || tr("menu.gen.defaultTitle", { from: "", to: "" }), place: "market", date: dateVal });
+    const list = newShopList({ helperId: h.id, title: String(fd.get("title") || "").trim() || menuShopAutoTitle(dateVal), place: "market", date: dateVal });
     state.shopLists.push(list);
-    const res = addAggToList(list, aggregateIngredients(entries));
+    const byId = new Map();
+    for (const e of entries) {
+      const id = e.dish?.key;
+      const r = recs.find((x) => x.id === id);
+      if (!r) continue;
+      if (!byId.has(id)) byId.set(id, { recipe: r, ingredients: [] });
+      byId.get(id).ingredients.push(e.ing);
+    }
+    const res = addRecipeMapToList(list, byId.values());
     if (!save()) return;
     ui.sheet = null;
     ui.shopListId = list.id;

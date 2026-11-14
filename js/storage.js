@@ -105,7 +105,7 @@ function migrate(raw) {
   state.shopLists = (Array.isArray(state.shopLists) ? state.shopLists : [])
     .filter((l) => l && typeof l === "object" && l.id)
     .map((l) => ({ ...l, date: listDate(l) || todayISO() }));
-  state.shopItems = Array.isArray(state.shopItems) ? state.shopItems : [];
+  state.shopItems = (Array.isArray(state.shopItems) ? state.shopItems : []).map(normalizeShopItem);
   state.priceCatalog = normalizeCatalog(state.priceCatalog);
   state.recipes = normalizeRecipes(state.recipes);
   state.menu = normalizeMenu(state.menu);
@@ -422,9 +422,31 @@ export function newShopItem(partial = {}) {
     suggestedPrice: null,
     paidPrice: "",
     bought: false,
+    kind: "",
+    recipeId: "",
+    parentId: "",
     createdAt: new Date().toISOString(),
     ...partial,
   };
+}
+
+export function normalizeShopItem(it) {
+  if (!it || typeof it !== "object") return it;
+  const kind = it.kind === "recipe" || it.kind === "ing" ? it.kind : "";
+  return {
+    ...it,
+    kind,
+    recipeId: String(it.recipeId || ""),
+    parentId: String(it.parentId || ""),
+  };
+}
+
+export function isRecipeParent(item) {
+  return Boolean(item && item.kind === "recipe");
+}
+
+export function isShopLeaf(item) {
+  return !isRecipeParent(item);
 }
 
 

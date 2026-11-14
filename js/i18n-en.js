@@ -757,7 +757,7 @@ export const en = {
   "menu.gen.hint": "Only dishes linked to a recipe are used. Matching ingredients are merged.",
   "menu.gen.days": "Pick days",
   "menu.gen.dishCount": "{n} dishes ({r} with recipe)",
-  "menu.gen.defaultTitle": "Menu shopping {from}–{to}",
+  "menu.gen.defaultTitle": "Menu shopping {date}",
   "menu.gen.group": "Group by meal",
   "menu.gen.group.hint": "The same ingredient used in different meals is listed under each; turn off to merge everything.",
   "menu.gen.go": "Create list",
@@ -900,4 +900,6 @@ export const en = {
   "prefs.home.actions": "Share and edit buttons",
   "prefs.home.ack": "Acknowledgement",
   "more.leave.sub": "Rest days, annual leave and statutory holidays",
+  "shop.recipe.progress": "{done}/{total} ingredients",
+  "shop.recipe.delete": "Remove this dish and its ingredients",
 };

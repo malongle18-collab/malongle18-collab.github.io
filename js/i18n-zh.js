@@ -757,7 +757,7 @@ export const zhHant = {
   "menu.gen.hint": "只會加入已連結菜譜的餸，相同材料會合併份量。",
   "menu.gen.days": "選日子",
   "menu.gen.dishCount": "{n} 道菜（{r} 道有菜譜）",
-  "menu.gen.defaultTitle": "餐單買餸 {from}–{to}",
+  "menu.gen.defaultTitle": "餐單買餸 {date}",
   "menu.gen.group": "按餐分組",
   "menu.gen.group.hint": "同一材料在不同餐出現會分開列出；關閉則全部合併。",
   "menu.gen.go": "生成清單",
@@ -900,4 +900,6 @@ export const zhHant = {
   "prefs.home.actions": "分享與編輯按鈕",
   "prefs.home.ack": "確認已閱",
   "more.leave.sub": "休息日、年假與法定假日",
+  "shop.recipe.progress": "{done}／{total} 項材料",
+  "shop.recipe.delete": "刪除這道菜及材料",
 };
