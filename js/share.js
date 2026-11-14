@@ -1,3 +1,4 @@
+import { t } from "./i18n.js?v=8";
 /** PIN-encrypted helper snapshots for sharing and same-phone unlock. */
 
 const textEnc = new TextEncoder();
@@ -68,7 +69,7 @@ export async function encryptShare(payload, pin) {
 
 export async function decryptShare(packedB64, pin) {
   const packed = b64urlToBytes(String(packedB64).trim());
-  if (packed.length < 30 || packed[0] !== 1) throw new Error("查看方式格式不正確");
+  if (packed.length < 30 || packed[0] !== 1) throw new Error(t("err.packedFormat"));
   const salt = packed.subarray(1, 17);
   const iv = packed.subarray(17, 29);
   const ct = packed.subarray(29);
@@ -77,7 +78,7 @@ export async function decryptShare(packedB64, pin) {
     const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
     return JSON.parse(textDec.decode(pt));
   } catch {
-    throw new Error("查看密碼不正確，或這份查看方式已失效");
+    throw new Error(t("err.pinWrong"));
   }
 }
 
@@ -226,7 +227,7 @@ const RETURN_PREFIX = "r";
 
 /** Resize and JPEG-compress a picked/captured image for local storage and share. */
 export async function compressImageFile(file, { maxSize = 720, quality = 0.72 } = {}) {
-  if (!file) throw new Error("未選擇相片");
+  if (!file) throw new Error(t("err.noPhoto"));
   let bitmap = null;
   if (typeof createImageBitmap === "function") {
     try {
@@ -241,7 +242,7 @@ export async function compressImageFile(file, { maxSize = 720, quality = 0.72 } 
       bitmap = await new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error("無法讀取相片"));
+        img.onerror = () => reject(new Error(t("err.photoRead")));
         img.src = url;
       });
     } finally {
@@ -260,7 +261,7 @@ export async function compressImageFile(file, { maxSize = 720, quality = 0.72 } 
   ctx.drawImage(bitmap, 0, 0, cw, ch);
   if (bitmap.close) bitmap.close();
   const dataUrl = canvas.toDataURL("image/jpeg", quality);
-  if (!dataUrl || dataUrl === "data:,") throw new Error("相片處理失敗");
+  if (!dataUrl || dataUrl === "data:,") throw new Error(t("err.photoProcess"));
   return dataUrl;
 }
 
