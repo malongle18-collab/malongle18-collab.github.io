@@ -1,27 +1,5 @@
 /* 外傭僱傭助手 — ColorHunt 194350 / FF8882 / FFC2B4 / 9DBEB8 */
 
-@font-face {
-  font-family: "FDH Sans";
-  src: url("../fonts/fdh-sans.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "FDH Sans";
-  src: url("../fonts/fdh-sans-bold.woff2") format("woff2");
-  font-weight: 600 800;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "FDH Serif";
-  src: url("../fonts/fdh-serif.woff2") format("woff2");
-  font-weight: 400 800;
-  font-style: normal;
-  font-display: swap;
-}
-
 :root {
   color-scheme: light dark;
   --shell: #194350;

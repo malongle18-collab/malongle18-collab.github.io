@@ -1,9 +1,11 @@
-const CACHE = "fdh-household-pages-v4";
+const CACHE = "fdh-household-pages-v5";
 const ASSETS = [
   "./",
   "./index.html",
   "./css/app.css",
+  "./css/app.css?v=5",
   "./js/app.js",
+  "./js/app.js?v=5",
   "./js/data.js",
   "./js/dates.js",
   "./js/rules.js",
@@ -38,9 +40,20 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
-  event.respondWith(
-    caches.match(req).then((cached) => {
-      const fetched = fetch(req)
+  const dest = req.destination;
+  const networkFirst =
+    dest === "document" ||
+    dest === "style" ||
+    dest === "script" ||
+    dest === "manifest" ||
+    url.pathname.endsWith(".webmanifest") ||
+    url.pathname.endsWith(".css") ||
+    url.pathname.endsWith(".js") ||
+    url.pathname === "/" ||
+    url.pathname.endsWith("/index.html");
+  if (networkFirst) {
+    event.respondWith(
+      fetch(req)
         .then((res) => {
           if (res && res.ok) {
             const copy = res.clone();
@@ -48,8 +61,17 @@ self.addEventListener("fetch", (event) => {
           }
           return res;
         })
-        .catch(() => cached);
-      return cached || fetched;
-    })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
+  event.respondWith(
+    caches.match(req).then((cached) => cached || fetch(req).then((res) => {
+      if (res && res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then((cache) => cache.put(req, copy));
+      }
+      return res;
+    }))
   );
 });

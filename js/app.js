@@ -2212,20 +2212,37 @@ function mainContent() {
   }
 }
 
+function bootError(err) {
+  const app = document.getElementById("app");
+  if (!app) return;
+  const msg = err && err.message ? String(err.message) : "未知錯誤";
+  app.innerHTML = `
+    <main class="main">
+      <h1 class="screen-title">載入時發生問題</h1>
+      <p class="lede">請重新整理這個頁面。如果仍然空白，用無痕視窗開啟，或在瀏覽器清除此網站的資料後再試。本機已儲存的資料不會因此刪除。</p>
+      <p class="disclaimer">${escapeHtml(msg)}</p>
+    </main>
+  `;
+}
+
 function render() {
   const app = document.getElementById("app");
   if (!app) return;
-  const showChrome = ui.tab !== "role" && ui.tab !== "h-enter" && !(ui.tab === "onboard" && !state.helpers.length && role === "employer");
-  const sub =
-    role === "helper" ? (sessionHelper()?.name ? escapeHtml(sessionHelper().name) + "　外傭版面" : "外傭版面") : "僱主版面";
-  app.innerHTML = `
-    ${ui.tab === "role" ? "" : header(sub)}
-    <main class="main">${mainContent()}</main>
-    ${tabbar()}
-    ${sheetHtml()}
-    ${ui.toast ? `<div class="toast" role="status">${escapeHtml(ui.toast)}</div>` : ""}
-  `;
-  bindAfterRender();
+  try {
+    const sub =
+      role === "helper" ? (sessionHelper()?.name ? escapeHtml(sessionHelper().name) + "　外傭版面" : "外傭版面") : "僱主版面";
+    app.innerHTML = `
+      ${ui.tab === "role" ? "" : header(sub)}
+      <main class="main">${mainContent()}</main>
+      ${tabbar()}
+      ${sheetHtml()}
+      ${ui.toast ? `<div class="toast" role="status">${escapeHtml(ui.toast)}</div>` : ""}
+    `;
+    bindAfterRender();
+  } catch (err) {
+    console.error(err);
+    bootError(err);
+  }
 }
 
 function bindHelperContractDates() {
@@ -3047,7 +3064,7 @@ function maybeNotify() {
 function registerSW() {
   if (!("serviceWorker" in navigator)) return;
   if (location.protocol === "file:") return;
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
+  navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).catch(() => {});
 }
 
 window.addEventListener("hashchange", () => {
@@ -3058,10 +3075,15 @@ document.addEventListener("click", onClick);
 document.addEventListener("change", onChange);
 document.addEventListener("submit", onSubmit);
 
-parseHash();
-if (!role && ui.tab !== "h-enter") ui.tab = "role";
-if (role === "employer" && !state.helpers.length && !["helper-new", "onboard", "role"].includes(ui.tab)) ui.tab = "onboard";
-if (role === "helper" && !sessionHelper() && ui.tab !== "role") ui.tab = "h-enter";
-render();
-registerSW();
-maybeNotify();
+try {
+  parseHash();
+  if (!role && ui.tab !== "h-enter") ui.tab = "role";
+  if (role === "employer" && !state.helpers.length && !["helper-new", "onboard", "role"].includes(ui.tab)) ui.tab = "onboard";
+  if (role === "helper" && !sessionHelper() && ui.tab !== "role") ui.tab = "h-enter";
+  render();
+  registerSW();
+  maybeNotify();
+} catch (err) {
+  console.error(err);
+  bootError(err);
+}
