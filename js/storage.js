@@ -1,6 +1,6 @@
-import { getLang, t } from "./i18n.js?v=8";
-import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=8";
-import { defaultContractEnd } from "./rules.js?v=8";
+import { getLang, t } from "./i18n.js?v=9";
+import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=9";
+import { defaultContractEnd } from "./rules.js?v=9";
 
 export const STORAGE_KEY = "fdh-employer-v1";
 
