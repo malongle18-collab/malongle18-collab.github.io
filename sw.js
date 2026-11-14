@@ -1,35 +1,37 @@
-const CACHE = "fdh-household-pages-v11";
+const CACHE = "fdh-household-pages-v12";
 const ASSETS = [
   "./",
   "./index.html",
   "./css/app.css",
-  "./css/app.css?v=11",
+  "./css/app.css?v=12",
   "./js/app.js",
-  "./js/app.js?v=11",
+  "./js/app.js?v=12",
   "./js/data.js",
-  "./js/data.js?v=11",
+  "./js/data.js?v=12",
   "./js/dates.js",
-  "./js/dates.js?v=11",
+  "./js/dates.js?v=12",
   "./js/rules.js",
-  "./js/rules.js?v=11",
+  "./js/rules.js?v=12",
   "./js/storage.js",
-  "./js/storage.js?v=11",
+  "./js/storage.js?v=12",
   "./js/reminders.js",
-  "./js/reminders.js?v=11",
+  "./js/reminders.js?v=12",
   "./js/i18n.js",
-  "./js/i18n.js?v=11",
+  "./js/i18n.js?v=12",
   "./js/i18n-zh.js",
-  "./js/i18n-zh.js?v=11",
+  "./js/i18n-zh.js?v=12",
   "./js/i18n-en.js",
-  "./js/i18n-en.js?v=11",
+  "./js/i18n-en.js?v=12",
   "./js/icons.js",
-  "./js/icons.js?v=11",
+  "./js/icons.js?v=12",
   "./js/share.js",
-  "./js/share.js?v=11",
+  "./js/share.js?v=12",
   "./js/docs.js",
   "./js/menu.js",
-  "./js/docs.js?v=11",
-  "./js/menu.js?v=11",
+  "./js/docs.js?v=12",
+  "./js/menu.js?v=12",
+  "./js/recipes-lib.js",
+  "./js/recipes-lib.js?v=12",
   "./manifest.webmanifest",
   "./icons/favicon.svg"
 ];
@@ -78,7 +80,7 @@ self.addEventListener("fetch", (event) => {
           }
           return res;
         })
-        .catch(() => caches.match(req))
+        .catch(() => caches.match(req, { ignoreSearch: dest === "document" }))
     );
     return;
   }
