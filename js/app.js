@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=10";
+} from "./data.js?v=11";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=10";
-import { escapeHtml, icon } from "./icons.js?v=10";
+} from "./dates.js?v=11";
+import { escapeHtml, icon } from "./icons.js?v=11";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=10";
+} from "./reminders.js?v=11";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=10";
+} from "./rules.js?v=11";
 import {
   arrangedRestList,
   currentHelper,
@@ -91,7 +91,7 @@ import {
   toggleArrangedRestDay,
   normalizeConsent,
   uid,
-} from "./storage.js?v=10";
+} from "./storage.js?v=11";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -117,7 +117,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=10";
+} from "./share.js?v=11";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -132,7 +132,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=10";
+} from "./docs.js?v=11";
 import {
   MAX_DISHES_PER_SLOT,
   MAX_SLOTS,
@@ -153,8 +153,8 @@ import {
   splitLines,
   splitTags,
   weekDates,
-} from "./menu.js?v=10";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tp } from "./i18n.js?v=10";
+} from "./menu.js?v=11";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tp } from "./i18n.js?v=11";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [

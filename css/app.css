@@ -3185,3 +3185,24 @@ input:not([type]) {
   min-width: 3.2rem;
   max-width: 7rem;
 }
+
+/* Desktop: sheets become centred dialogs instead of bottom sheets */
+@media (min-width: 900px) {
+  .sheet {
+    top: 50%;
+    bottom: auto;
+    left: 50%;
+    right: auto;
+    width: min(36rem, calc(100vw - 4rem));
+    max-width: none;
+    margin: 0;
+    max-height: min(84vh, 46rem);
+    transform: translate(-50%, -50%);
+    border-radius: 1.2rem;
+    padding: 1.4rem 1.6rem 1.5rem;
+    box-shadow: 0 1.5rem 3.5rem rgba(20, 33, 30, 0.24);
+  }
+  .sheet-handle {
+    display: none;
+  }
+}
