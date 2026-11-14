@@ -1,0 +1,33 @@
+name: Materialize recipe JPEGs
+on:
+  push:
+    branches: [main]
+    paths:
+      - "images/recipes/*.jpg.b64"
+      - ".github/scripts/decode-recipe-photos.py"
+      - ".github/workflows/materialize-recipe-photos.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: materialize-recipe-photos
+  cancel-in-progress: false
+jobs:
+  commit-jpegs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode sidecars into JPEGs
+        run: python3 .github/scripts/decode-recipe-photos.py
+      - name: Commit JPEGs if they changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add images/recipes/*.jpg
+          if git diff --cached --quiet; then
+            echo "No JPEG changes to commit."
+          else
+            git commit -m "Materialize library recipe JPEGs from text sidecars."
+            git pull --rebase origin main
+            git push
+          fi
