@@ -1,9 +1,9 @@
-import { getLang, t } from "./i18n.js?v=12";
-import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=12";
-import { cleanIdNumber, normalizeDocs } from "./docs.js?v=12";
-import { defaultContractEnd } from "./rules.js?v=12";
-import { todayISO } from "./dates.js?v=12";
-import { emptyMenu, normalizeDiet, normalizeMenu, normalizeRecipes } from "./menu.js?v=12";
+import { getLang, t } from "./i18n.js?v=13";
+import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=13";
+import { cleanIdNumber, normalizeDocs } from "./docs.js?v=13";
+import { defaultContractEnd } from "./rules.js?v=13";
+import { todayISO } from "./dates.js?v=13";
+import { emptyMenu, normalizeDiet, normalizeMenu, normalizeRecipes } from "./menu.js?v=13";
 
 export const STORAGE_KEY = "fdh-employer-v1";
 
@@ -427,4 +427,124 @@ export function newShopItem(partial = {}) {
   };
 }
 
+
+
+export const UI_PREFS_KEY = "fdh-ui-prefs-v1";
+
+export const UI_NAV = {
+  employer: [
+    { id: "leave", labelKey: "tab.leave" },
+    { id: "tasks", labelKey: "tab.tasks" },
+    { id: "rules", labelKey: "tab.rules" },
+    { id: "shop", labelKey: "shop.title" },
+    { id: "menu", labelKey: "menu.title" },
+    { id: "pay", labelKey: "pay.title" },
+    { id: "share", labelKey: "share.title" },
+  ],
+  helper: [
+    { id: "h-leave", labelKey: "tab.leave" },
+    { id: "h-tasks", labelKey: "tab.tasks" },
+    { id: "h-rules", labelKey: "tab.rules" },
+    { id: "h-shop", labelKey: "shop.title" },
+    { id: "h-menu", labelKey: "menu.title" },
+    { id: "h-pay", labelKey: "pay.title" },
+  ],
+};
+
+export const UI_HOME = {
+  employer: [
+    { id: "welcome", labelKey: "prefs.home.welcome" },
+    { id: "update", labelKey: "prefs.home.update" },
+    { id: "stats", labelKey: "prefs.home.stats" },
+    { id: "helper", labelKey: "prefs.home.helper" },
+    { id: "reminders", labelKey: "home.reminders" },
+    { id: "menu", labelKey: "menu.home.title" },
+    { id: "docs", labelKey: "doc.panel.title" },
+    { id: "holidays", labelKey: "prefs.home.holidays" },
+    { id: "entries", labelKey: "prefs.home.entries" },
+    { id: "actions", labelKey: "prefs.home.actions" },
+  ],
+  helper: [
+    { id: "welcome", labelKey: "prefs.home.welcome" },
+    { id: "stats", labelKey: "prefs.home.stats" },
+    { id: "entries", labelKey: "prefs.home.entries" },
+    { id: "reminders", labelKey: "home.reminders" },
+    { id: "menu", labelKey: "menu.home.title" },
+    { id: "docs", labelKey: "doc.panel.title" },
+    { id: "ack", labelKey: "prefs.home.ack" },
+  ],
+};
+
+function uiRoleBucket(role) {
+  return role === "helper" ? "helper" : "employer";
+}
+
+function uiFlags(list, raw) {
+  const out = {};
+  const src = raw && typeof raw === "object" ? raw : {};
+  for (const item of list) out[item.id] = src[item.id] !== false;
+  return out;
+}
+
+export function emptyUiPrefs() {
+  return {
+    employer: { nav: uiFlags(UI_NAV.employer, {}), home: uiFlags(UI_HOME.employer, {}) },
+    helper: { nav: uiFlags(UI_NAV.helper, {}), home: uiFlags(UI_HOME.helper, {}) },
+  };
+}
+
+export function normalizeUiPrefs(raw) {
+  const base = emptyUiPrefs();
+  const src = raw && typeof raw === "object" ? raw : {};
+  for (const role of ["employer", "helper"]) {
+    const r = src[role] && typeof src[role] === "object" ? src[role] : {};
+    base[role].nav = uiFlags(UI_NAV[role], r.nav);
+    base[role].home = uiFlags(UI_HOME[role], r.home);
+  }
+  return base;
+}
+
+export function loadUiPrefs() {
+  try {
+    const raw = localStorage.getItem(UI_PREFS_KEY);
+    if (!raw) return emptyUiPrefs();
+    return normalizeUiPrefs(JSON.parse(raw));
+  } catch (err) {
+    console.warn("Could not read UI prefs", err);
+    return emptyUiPrefs();
+  }
+}
+
+export function saveUiPrefs(prefs) {
+  const next = normalizeUiPrefs(prefs);
+  localStorage.setItem(UI_PREFS_KEY, JSON.stringify(next));
+  return next;
+}
+
+export function isNavVisible(prefs, role, id) {
+  if (id === "home" || id === "more" || id === "h" || id === "h-more") return true;
+  const bucket = uiRoleBucket(role);
+  return prefs?.[bucket]?.nav?.[id] !== false;
+}
+
+export function isHomeVisible(prefs, role, id) {
+  const bucket = uiRoleBucket(role);
+  return prefs?.[bucket]?.home?.[id] !== false;
+}
+
+export function setUiPref(prefs, role, group, id, on) {
+  const bucket = uiRoleBucket(role);
+  const list = group === "nav" ? UI_NAV[bucket] : UI_HOME[bucket];
+  if (!list.some((item) => item.id === id)) return prefs;
+  const next = {
+    ...prefs,
+    [bucket]: {
+      ...prefs[bucket],
+      [group]: { ...prefs[bucket][group], [id]: Boolean(on) },
+    },
+  };
+  return saveUiPrefs(next);
+}
+
 export { uid };
+
