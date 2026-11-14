@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=8";
+} from "./data.js?v=9";
 import {
   addDays,
   daysBetween,
@@ -29,14 +29,14 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=8";
-import { escapeHtml, icon } from "./icons.js?v=8";
+} from "./dates.js?v=9";
+import { escapeHtml, icon } from "./icons.js?v=9";
 import {
   buildReminders,
   isReminderVisible,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=8";
+} from "./reminders.js?v=9";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -59,7 +59,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=8";
+} from "./rules.js?v=9";
 import {
   arrangedRestList,
   currentHelper,
@@ -81,7 +81,7 @@ import {
   shKey,
   toggleArrangedRestDay,
   uid,
-} from "./storage.js?v=8";
+} from "./storage.js?v=9";
 import {
   ACK_KEY,
   buildSharePayload,
@@ -103,8 +103,8 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=8";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tp } from "./i18n.js?v=8";
+} from "./share.js?v=9";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tp } from "./i18n.js?v=9";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -428,7 +428,7 @@ function sidebar() {
           ["h-shop", "shop.title", "basket"],
           ["h-pay", "pay.title", "coin"],
           ["h-remind", "home.reminders", "bell"],
-          ["h-rights", "hmore.rights", "doc"],
+          ["h-more", "tab.more", "more"],
         ]
       : [
           ["home", "tab.home", "home"],
@@ -442,7 +442,7 @@ function sidebar() {
           ["guide", "more.guide", "doc"],
           ["backup", "backup.title", "download"],
         ];
-  const cur = ui.tab === "shop-detail" ? "shop" : ui.tab === "h-shop-detail" ? "h-shop" : ui.tab === "more" ? "home" : ui.tab === "h-more" ? "h" : ui.tab;
+  const cur = ui.tab === "shop-detail" ? "shop" : ui.tab === "h-shop-detail" ? "h-shop" : ui.tab === "more" ? "home" : ui.tab === "h-more" || ui.tab === "h-rights" ? "h-more" : ui.tab;
   const home = role === "helper" ? "h" : "home";
   return `
     <aside class="sidebar" aria-label="${tr("aria.mainTabs")}">
