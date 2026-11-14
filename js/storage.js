@@ -1,9 +1,9 @@
-import { getLang, t } from "./i18n.js?v=11";
-import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=11";
-import { cleanIdNumber, normalizeDocs } from "./docs.js?v=11";
-import { defaultContractEnd } from "./rules.js?v=11";
-import { todayISO } from "./dates.js?v=11";
-import { emptyMenu, normalizeMenu, normalizeRecipes } from "./menu.js?v=11";
+import { getLang, t } from "./i18n.js?v=12";
+import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=12";
+import { cleanIdNumber, normalizeDocs } from "./docs.js?v=12";
+import { defaultContractEnd } from "./rules.js?v=12";
+import { todayISO } from "./dates.js?v=12";
+import { emptyMenu, normalizeDiet, normalizeMenu, normalizeRecipes } from "./menu.js?v=12";
 
 export const STORAGE_KEY = "fdh-employer-v1";
 
@@ -96,6 +96,8 @@ function migrate(raw) {
   state.guideChecks =
     state.guideChecks && typeof state.guideChecks === "object" ? state.guideChecks : {};
   state.settings = { notifications: false, employerName: "", ...(state.settings || {}) };
+  state.settings.diet = normalizeDiet(state.settings.diet);
+  state.settings.recentBuyDays = [0, 3, 7, 14, 30].includes(Number(state.settings.recentBuyDays)) ? Number(state.settings.recentBuyDays) : 7;
   state.arrangedRestDays =
     state.arrangedRestDays && typeof state.arrangedRestDays === "object" ? state.arrangedRestDays : {};
   state.workTasks = Array.isArray(state.workTasks) ? state.workTasks : [];

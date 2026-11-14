@@ -1,11 +1,20 @@
 /** Meal plan (今日餐單) and recipes (菜譜): pure data helpers, no DOM. */
-import { compressImageFile } from "./share.js?v=11";
+import { compressImageFile } from "./share.js?v=12";
+import { getLang } from "./i18n.js?v=12";
+import { LIB_RECIPES } from "./recipes-lib.js?v=12";
 
 export const DEFAULT_SLOT_KEYS = ["breakfast", "lunch", "dinner", "snack"];
 export const MAX_SLOTS = 12;
 export const MAX_DISHES_PER_SLOT = 12;
-export const SHARE_MENU_PAST_DAYS = 1;
+export const SHARE_MENU_PAST_DAYS = 3;
 export const SHARE_MENU_FUTURE_DAYS = 45;
+export const REPEAT_WINDOW_DAYS = 3;
+export const CATEGORIES = ["meat", "poultry", "fish", "veg", "egg", "soup", "staple", "other"];
+export const DIFFICULTIES = ["easy", "medium", "hard"];
+/** "contains" keys + "light". Halal-friendly is derived: no pork and no alcohol. */
+export const DIET_KEYS = ["pork", "beef", "alcohol", "fermented", "light", "halal"];
+export const CONTAINS_KEYS = ["pork", "beef", "alcohol", "fermented"];
+export const DEFAULT_DIET = { noPork: false, noBeef: false, noAlcohol: false, noFermented: false, halalOnly: false, lightOnly: false };
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function nid(prefix) {
@@ -29,13 +38,23 @@ export function newRecipe(partial = {}) {
   const now = new Date().toISOString();
   return {
     id: nid("recipe"),
+    no: 0,
+    nameZh: "",
+    nameEn: "",
     name: "",
-    photo: "",
+    category: "other",
+    prepMins: 0,
+    difficulty: "easy",
     servings: "",
     ingredients: [],
     steps: [],
+    tips: { zh: "", en: "" },
     notes: "",
+    diet: [],
     tags: [],
+    photo: "",
+    copyOf: "",
+    sourceUrl: "",
     createdAt: now,
     updatedAt: now,
     ...partial,
@@ -65,28 +84,191 @@ export function splitTags(text) {
   return out.slice(0, 12);
 }
 
+function str(v, n) {
+  return String(v == null ? "" : v).trim().slice(0, n);
+}
+
+/** Old recipes stored ingredients/steps as plain strings; new ones as objects. Accept both. */
+function normIngredients(raw) {
+  const out = [];
+  for (const x of Array.isArray(raw) ? raw : []) {
+    if (typeof x === "string") {
+      const line = x.trim().slice(0, 160);
+      if (!line) continue;
+      const p = parseIngredient(line);
+      out.push({ zh: p.name, en: "", qty: p.qty, qtyEn: "" });
+    } else if (x && typeof x === "object") {
+      const zh = str(x.zh, 80);
+      const en = str(x.en, 80);
+      if (!zh && !en) continue;
+      out.push({ zh, en, qty: str(x.qty, 40), qtyEn: str(x.qtyEn, 40) });
+    }
+    if (out.length >= 80) break;
+  }
+  return out;
+}
+
+function normSteps(raw) {
+  const out = [];
+  for (const x of Array.isArray(raw) ? raw : []) {
+    if (typeof x === "string") {
+      const zh = x.trim().slice(0, 400);
+      if (zh) out.push({ zh, en: "" });
+    } else if (x && typeof x === "object") {
+      const zh = str(x.zh, 400);
+      const en = str(x.en, 400);
+      if (zh || en) out.push({ zh, en });
+    }
+    if (out.length >= 60) break;
+  }
+  return out;
+}
+
 export function normalizeRecipes(raw) {
   const seen = new Set();
   const out = [];
   for (const r of Array.isArray(raw) ? raw : []) {
     if (!r || typeof r !== "object" || !r.id || seen.has(String(r.id))) continue;
-    const name = String(r.name || "").trim().slice(0, 80);
-    if (!name) continue;
+    const nameZh = str(r.nameZh != null ? r.nameZh : r.name, 80);
+    const nameEn = str(r.nameEn, 80);
+    if (!nameZh && !nameEn) continue;
     seen.add(String(r.id));
+    const tips = r.tips && typeof r.tips === "object" ? { zh: String(r.tips.zh || "").slice(0, 800), en: String(r.tips.en || "").slice(0, 800) } : { zh: String(r.notes || "").slice(0, 800), en: "" };
+    const diet = (Array.isArray(r.diet) ? r.diet : []).map(String).filter((k) => DIET_KEYS.includes(k));
     out.push({
       id: String(r.id),
-      name,
+      no: Number.isInteger(Number(r.no)) && Number(r.no) >= 100 ? Number(r.no) : 0,
+      nameZh,
+      nameEn,
+      name: nameZh || nameEn,
+      category: CATEGORIES.includes(r.category) ? r.category : "other",
+      prepMins: Math.max(0, Math.min(1440, Math.round(Number(r.prepMins) || 0))),
+      difficulty: DIFFICULTIES.includes(r.difficulty) ? r.difficulty : "easy",
       photo: /^data:image\//.test(String(r.photo || "")) ? String(r.photo) : "",
-      servings: String(r.servings || "").trim().slice(0, 20),
-      ingredients: cleanLines(r.ingredients),
-      steps: cleanLines(r.steps, 40, 400),
-      notes: String(r.notes || "").slice(0, 800),
+      servings: str(r.servings, 20),
+      ingredients: normIngredients(r.ingredients),
+      steps: normSteps(r.steps),
+      tips,
+      notes: tips.zh,
+      diet: Array.from(new Set(diet)),
       tags: Array.isArray(r.tags) ? splitTags(r.tags.join(",")) : splitTags(r.tags),
+      copyOf: str(r.copyOf, 40),
+      sourceUrl: normalizeSourceUrl(r.sourceUrl),
       createdAt: String(r.createdAt || ""),
       updatedAt: String(r.updatedAt || r.createdAt || ""),
     });
   }
+  // Recipe ID numbers: keep valid ones, give old recipes a stable number in list order (101, 102, ...)
+  const used = new Set(out.map((r) => r.no).filter(Boolean));
+  let next = 101;
+  const dup = new Set();
+  for (const r of out) {
+    if (r.no && dup.has(r.no)) r.no = 0;
+    if (r.no) dup.add(r.no);
+  }
+  for (const r of out) {
+    if (r.no) continue;
+    while (used.has(next)) next += 1;
+    r.no = next;
+    used.add(next);
+  }
   return out;
+}
+
+export function nextRecipeNo(userRecipes) {
+  const max = (userRecipes || []).reduce((m, r) => Math.max(m, Number(r.no) || 0), 100);
+  return max + 1;
+}
+
+/* ---------- names / language ---------- */
+
+function langOf(lang) {
+  return lang || getLang();
+}
+
+export function recipeName(r, lang) {
+  if (!r) return "";
+  return langOf(lang) === "en" ? r.nameEn || r.nameZh || r.name || "" : r.nameZh || r.nameEn || r.name || "";
+}
+export function recipeNameOther(r, lang) {
+  if (!r) return "";
+  return langOf(lang) === "en" ? (r.nameEn ? r.nameZh : "") : r.nameEn || "";
+}
+export function ingName(i, lang) {
+  return langOf(lang) === "en" ? i.en || i.zh : i.zh || i.en;
+}
+export function ingQty(i, lang) {
+  return langOf(lang) === "en" ? i.qtyEn || i.qty : i.qty || i.qtyEn;
+}
+export function stepText(s, lang) {
+  return langOf(lang) === "en" ? s.en || s.zh : s.zh || s.en;
+}
+export function tipsText(r, lang) {
+  const t = r.tips || { zh: "", en: "" };
+  return langOf(lang) === "en" ? t.en || t.zh : t.zh || t.en;
+}
+export function recipeNoLabel(r) {
+  return `#${r.no}`;
+}
+
+/** Library first, then the household's own recipes. */
+export function allRecipes(userRecipes) {
+  return [...LIB_RECIPES, ...(userRecipes || [])];
+}
+
+/* ---------- diet ---------- */
+
+export function normalizeDiet(raw) {
+  const d = { ...DEFAULT_DIET };
+  if (raw && typeof raw === "object") for (const k of Object.keys(d)) d[k] = Boolean(raw[k]);
+  return d;
+}
+
+/** Built-in recipes: derived (no pork, no alcohol). Own recipes: only when the owner ticked "halal-friendly". */
+export function isHalalFriendly(r) {
+  const d = r.diet || [];
+  if (d.includes("pork") || d.includes("alcohol")) return false;
+  return r.builtin ? true : d.includes("halal");
+}
+
+/** Which household preferences does this recipe break? Returns keys like "pork", "beef", "halal", "light". */
+export function dietConflicts(r, diet) {
+  const d = normalizeDiet(diet);
+  const has = new Set(r.diet || []);
+  const out = [];
+  if (d.noPork && has.has("pork")) out.push("pork");
+  if (d.noBeef && has.has("beef")) out.push("beef");
+  if (d.noAlcohol && has.has("alcohol")) out.push("alcohol");
+  if (d.noFermented && has.has("fermented")) out.push("fermented");
+  if (d.halalOnly && !isHalalFriendly(r)) out.push("halal");
+  if (d.lightOnly && !has.has("light")) out.push("light");
+  return out;
+}
+
+/* ---------- recently eaten ---------- */
+
+export function dishKey(d, recipes) {
+  if (d.recipeId) return `r:${d.recipeId}`;
+  const t = String(d.text || "").trim().toLowerCase();
+  return t ? `t:${t}` : "";
+}
+
+/** Days ago (1..window) that this dish key was planned before `date`, or 0 if not. Uses the nearest day. */
+export function eatenDaysAgo(menu, key, date, windowDays = REPEAT_WINDOW_DAYS) {
+  if (!key) return 0;
+  for (let n = 1; n <= windowDays; n++) {
+    const day = menu.days?.[shiftISO(date, -n)];
+    if (!day) continue;
+    for (const list of Object.values(day)) {
+      if (list.some((d) => dishKey(d) === key)) return n;
+    }
+  }
+  return 0;
+}
+
+/** Recipes planned within the last `windowDays` days up to and including yesterday (relative to `today`). */
+export function recipeEatenDaysAgo(menu, recipeId, today, windowDays = REPEAT_WINDOW_DAYS) {
+  return eatenDaysAgo(menu, `r:${recipeId}`, today, windowDays);
 }
 
 export function normalizeMenu(raw) {
@@ -136,10 +318,10 @@ export function slotLabel(slot, tr) {
   return slot.key ? tr(`menu.slot.${slot.key}`) : tr("menu.slot.custom");
 }
 
-export function dishLabel(dish, recipes) {
-  if (dish.text) return dish.text;
+export function dishLabel(dish, recipes, lang) {
   const r = (recipes || []).find((x) => x.id === dish.recipeId);
-  return r ? r.name : "";
+  if (dish.text && !(r && [r.nameZh, r.nameEn, r.name].includes(dish.text))) return dish.text;
+  return r ? recipeName(r, lang) : dish.text || "";
 }
 
 export function dayDishes(menu, date) {
@@ -205,6 +387,111 @@ export function parseIngredient(line) {
   return { name: s, qty: "" };
 }
 
+
+/* ---------- quantities and shopping aggregation ---------- */
+
+const FRAC = { 0.25: "1/4", 0.5: "1/2", 0.75: "3/4" };
+function fmtNum(n) {
+  const r = Math.round(n * 100) / 100;
+  const whole = Math.floor(r);
+  const f = Math.round((r - whole) * 100) / 100;
+  if (FRAC[f]) return whole ? `${whole} ${FRAC[f]}` : FRAC[f];
+  return String(r);
+}
+
+function parseQty(q) {
+  const m = String(q || "").trim().match(/^(\d+(?:\.\d+)?|\d+\/\d+)\s*(.*)$/);
+  if (!m) return null;
+  let n = m[1].includes("/") ? Number(m[1].split("/")[0]) / Number(m[1].split("/")[1]) : Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  return { n, unit: m[2].trim() };
+}
+
+/** "2隻" + "1隻" -> "3隻"; mixed units are joined with " + ". */
+export function mergeQty(list) {
+  const sums = new Map();
+  const others = [];
+  for (const q of list) {
+    const s = String(q || "").trim();
+    if (!s) continue;
+    const p = parseQty(s);
+    if (!p) {
+      if (!others.includes(s)) others.push(s);
+      continue;
+    }
+    const k = p.unit.toLowerCase();
+    sums.set(k, { n: (sums.get(k)?.n || 0) + p.n, unit: p.unit });
+  }
+  const parts = Array.from(sums.values()).map((v) => `${fmtNum(v.n)}${v.unit && /^[a-z]/i.test(v.unit) ? " " : ""}${v.unit}`);
+  return [...parts, ...others].join(" + ");
+}
+
+/** entries: [{ ing, dish, group }] -> merged rows { zh, en, qty, qtyEn, dishes[], group } */
+export function aggregateIngredients(entries) {
+  const map = new Map();
+  for (const { ing, dish, group = "" } of entries) {
+    const key = `${group}|${String(ing.zh || ing.en).trim().toLowerCase()}`;
+    let row = map.get(key);
+    if (!row) {
+      row = { zh: ing.zh, en: ing.en, qtys: [], qtysEn: [], dishes: [], group };
+      map.set(key, row);
+    }
+    if (!row.zh && ing.zh) row.zh = ing.zh;
+    if (!row.en && ing.en) row.en = ing.en;
+    if (ing.qty) row.qtys.push(ing.qty);
+    if (ing.qtyEn || ing.qty) row.qtysEn.push(ing.qtyEn || ing.qty);
+    if (dish && !row.dishes.some((d) => d.key === dish.key)) row.dishes.push(dish);
+  }
+  return Array.from(map.values()).map((r) => ({
+    zh: r.zh,
+    en: r.en,
+    qty: mergeQty(r.qtys),
+    qtyEn: mergeQty(r.qtysEn),
+    dishes: r.dishes,
+    group: r.group,
+  }));
+}
+
+/* ---------- share text ---------- */
+
+const DIFF_EN = { easy: "Easy", medium: "Medium", hard: "Hard" };
+const DIFF_ZH = { easy: "容易", medium: "中等", hard: "較難" };
+
+export function recipeShareText(r, lang) {
+  const en = lang === "en";
+  const L = [];
+  L.push(`${recipeNoLabel(r)} ${recipeName(r, lang)}`);
+  const meta = [];
+  if (r.prepMins) meta.push(en ? `${r.prepMins} min` : `${r.prepMins} 分鐘`);
+  meta.push(en ? DIFF_EN[r.difficulty] : DIFF_ZH[r.difficulty]);
+  if (r.servings) meta.push(en ? `Serves ${r.servings}` : `${r.servings} 人份`);
+  L.push(meta.filter(Boolean).join(" · "));
+  L.push("");
+  L.push(en ? "Ingredients:" : "材料：");
+  for (const i of r.ingredients) L.push(`- ${ingName(i, lang)}${ingQty(i, lang) ? ` ${ingQty(i, lang)}` : ""}`);
+  L.push("");
+  L.push(en ? "Steps:" : "步驟：");
+  r.steps.forEach((s, n) => L.push(`${n + 1}. ${stepText(s, lang)}`));
+  const tip = tipsText(r, lang);
+  if (tip) {
+    L.push("");
+    L.push(`${en ? "Tip" : "貼士"}: ${tip}`);
+  }
+  return L.join("\n");
+}
+
+/** slotsWithDishes: [{ label, dishes: [{ name, no, note }] }] */
+export function menuShareText(dateLabel, slotsWithDishes, lang) {
+  const en = lang === "en";
+  const L = [en ? `Menu ${dateLabel}` : `餐單 ${dateLabel}`];
+  for (const s of slotsWithDishes) {
+    L.push("");
+    L.push(`${s.label}:`);
+    for (const d of s.dishes) L.push(`- ${d.no ? `#${d.no} ` : ""}${d.name}${d.note ? ` (${d.note})` : ""}`);
+  }
+  return L.join("\n");
+}
+
 /** Helper-share copy: menu window only. */
 export function menuForShare(menu, fromISO, untilISO) {
   const days = {};
@@ -228,7 +515,133 @@ export async function recipesForShare(recipes, { withPhotos = true } = {}) {
         photo = "";
       }
     }
-    out.push({ id: r.id, name: r.name, photo, servings: r.servings, ingredients: r.ingredients, steps: r.steps, notes: r.notes, tags: r.tags });
+    out.push({
+      id: r.id, no: r.no, nameZh: r.nameZh, nameEn: r.nameEn, name: r.name, category: r.category, prepMins: r.prepMins, difficulty: r.difficulty,
+      photo, servings: r.servings, ingredients: r.ingredients, steps: r.steps, tips: r.tips, diet: r.diet, tags: r.tags, copyOf: r.copyOf, sourceUrl: r.sourceUrl || "",
+    });
   }
   return out;
+}
+
+/* ---------- web recipes: link + pasted text ---------- */
+
+/** Only http(s) links are kept. A bare domain gets https://. Returns "" if not usable. */
+export function normalizeSourceUrl(raw) {
+  let v = String(raw == null ? "" : raw).trim().slice(0, 600);
+  if (!v) return "";
+  if (!/^https?:\/\//i.test(v)) {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return "";
+    if (!/^[^\s/]+\.[^\s/]{2,}/.test(v)) return "";
+    v = `https://${v}`;
+  }
+  try {
+    const u = new URL(v);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+    return u.href.slice(0, 600);
+  } catch {
+    return "";
+  }
+}
+
+export function urlHost(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+/** First http(s) link found in a block of text. */
+export function findUrl(text) {
+  const m = String(text || "").match(/https?:\/\/[^\s<>"'，。）)]+/i);
+  return m ? m[0] : "";
+}
+
+export function webSearchUrls(query, lang) {
+  const q = String(query || "").trim();
+  const suffix = lang === "en" ? "recipe" : "食譜";
+  const enc = `${encodeURIComponent(q)}+${encodeURIComponent(suffix)}`;
+  return { google: `https://www.google.com/search?q=${enc}`, youtube: `https://www.youtube.com/results?search_query=${enc}` };
+}
+
+const HAS_CJK = /[\u3400-\u9fff\uf900-\ufaff]/;
+const BULLET = /^[\s\u3000]*(?:[-–—•·●○▪■□▫◦✓✔☑►▶◆◇＊*]+|[（(]?[a-z][)）]\s)\s*/i;
+const NUM_PREFIX = /^[\s\u3000]*(?:第\s*[0-9一二三四五六七八九十]+\s*[步點点]?\s*[:：.、．)）]?|[（(]?[0-9]{1,2}[)）]|[0-9]{1,2}\s*[.．、:：)）]|[①-⑳]|step\s*[0-9]+\s*[:.\-–)]?)\s*/i;
+const IS_NUMBERED = /^[\s\u3000]*(?:第\s*[0-9一二三四五六七八九十]+\s*[步點点]|[（(]?[0-9]{1,2}[)）]|[0-9]{1,2}\s*[.．、:：)）]|[①-⑳]|step\s*[0-9]+)/i;
+const H_ING = /^(?:[【\[#＃\s]*)(材料|食材|配料|用料|所需材料|準備材料|主料|ingredients?|what you(?:'| wi)?ll need|you(?:'| wi)?ll need)(?:[】\]\s]*)(?:[:：]\s*(.*))?$/i;
+const H_STEP = /^(?:[【\[#＃\s]*)(做法|作法|步驟|步骤|方法|製作方法|制作方法|烹調方法|烹饪步骤|煮法|steps?|method|directions?|instructions?|preparation|how to make(?: it)?)(?:[】\]\s]*)(?:[:：]\s*(.*))?$/i;
+const H_TIP = /^(?:[【\[#＃\s]*)(貼士|小貼士|貼心提示|提示|注意事項|tips?|notes?)(?:[】\]\s]*)(?:[:：]\s*(.*))?$/i;
+const H_MISC = /^(?:[【\[#＃\s]*)(調味料|醃料|醬汁|腌料|seasonings?|marinade|sauce)(?:[】\]\s]*)(?:[:：]\s*(.*))?$/i;
+const QTY_HINT = /[0-9½¼¾]\s*(?:g|kg|ml|l|cup|cups|tbsp|tsp|oz|lb|pcs?|克|公斤|斤|兩|両|毫升|升|個|隻|粒|條|包|盒|罐|瓶|片|塊|湯匙|茶匙|杯|只|棵|份|勺|匙|瓣|支)/i;
+
+function ingFromLine(line) {
+  const cjk = HAS_CJK.test(line);
+  if (!cjk) {
+    const m = line.match(/^((?:\d+(?:[./]\d+)?|[½¼¾])(?:\s+\d+\/\d+)?\s*(?:cups?|tbsp|tsp|tablespoons?|teaspoons?|g|kg|ml|l|oz|lb|pcs?|cloves?|slices?|pinch(?:es)?)?)\s+(.+)$/i);
+    if (m && m[2].trim()) return { zh: "", en: m[2].trim(), qty: "", qtyEn: m[1].trim() };
+  }
+  const p = parseIngredient(line);
+  return cjk ? { zh: p.name, en: "", qty: p.qty, qtyEn: "" } : { zh: "", en: p.name, qty: "", qtyEn: p.qty };
+}
+
+/** Heuristic split of pasted recipe text. Returns { name, ingredients[{zh,en,qty,qtyEn}], steps[{zh,en}], tips{zh,en} }. */
+export function parseRecipeText(text) {
+  const raw = String(text || "").replace(/\r/g, "").split("\n").map((l) => l.replace(/\u00a0/g, " ").trim());
+  const lines = raw.filter((l) => l && !/^https?:\/\/\S+$/i.test(l));
+  const hasHeadings = lines.some((l) => H_ING.test(l) || H_STEP.test(l));
+  const ings = [];
+  const steps = [];
+  const tipLines = [];
+  let name = "";
+  let section = hasHeadings ? "pre" : "auto";
+  const pushStep = (l) => {
+    const t = l.replace(NUM_PREFIX, "").replace(BULLET, "").trim();
+    if (!t) return;
+    steps.push(HAS_CJK.test(t) ? { zh: t.slice(0, 400), en: "" } : { zh: "", en: t.slice(0, 400) });
+  };
+  const pushIngs = (l) => {
+    const t = l.replace(BULLET, "").trim();
+    if (!t) return;
+    const parts = t.length <= 120 && /[、，,;；]/.test(t) && !/[。.!！?？]\s*$/.test(t) ? t.split(/[、，,;；]+/).map((x) => x.trim()).filter(Boolean) : [t];
+    for (const x of parts) ings.push(ingFromLine(x.slice(0, 160)));
+  };
+  for (const line of lines) {
+    let m;
+    if ((m = line.match(H_ING))) {
+      section = "ing";
+      if (m[2]) pushIngs(m[2]);
+      continue;
+    }
+    if ((m = line.match(H_STEP))) {
+      section = "step";
+      if (m[2]) pushStep(m[2]);
+      continue;
+    }
+    if ((m = line.match(H_TIP))) {
+      section = "tip";
+      if (m[2]) tipLines.push(m[2]);
+      continue;
+    }
+    if (H_MISC.test(line)) {
+      section = "ing";
+      continue;
+    }
+    if (section === "pre") {
+      if (!name && line.length <= 40) name = line.replace(/^[#＃【\[\s]+|[】\]\s]+$/g, "");
+      continue;
+    }
+    if (section === "ing") pushIngs(line);
+    else if (section === "step") pushStep(line);
+    else if (section === "tip") tipLines.push(line.replace(BULLET, ""));
+    else {
+      // no headings: numbered or long lines are steps; short/quantity lines are ingredients
+      if (IS_NUMBERED.test(line)) pushStep(line);
+      else if (line.length > 36 && /[。.!！]/.test(line)) pushStep(line);
+      else if (QTY_HINT.test(line) || line.length <= 24) pushIngs(line);
+      else pushStep(line);
+    }
+  }
+  const zhTips = tipLines.filter((l) => HAS_CJK.test(l)).join("\n");
+  const enTips = tipLines.filter((l) => !HAS_CJK.test(l)).join("\n");
+  return { name, ingredients: ings.slice(0, 80), steps: steps.slice(0, 60), tips: { zh: zhTips.slice(0, 800), en: enTips.slice(0, 800) } };
 }

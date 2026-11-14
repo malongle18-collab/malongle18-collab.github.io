@@ -1,4 +1,4 @@
-import { t } from "./i18n.js?v=11";
+import { t } from "./i18n.js?v=12";
 /** PIN-encrypted helper snapshots for sharing and same-phone unlock. */
 
 const textEnc = new TextEncoder();
@@ -83,7 +83,7 @@ export async function decryptShare(packedB64, pin) {
   }
 }
 
-export function buildSharePayload({ includeDocs = false, docs = null, customReminders = [], menu = null, recipes = null, helper, arrangedRestDays, leaveLogs, shStatuses, payments, workTasks, workRules, shopLists, shopItems, priceCatalog }) {
+export function buildSharePayload({ includeDocs = false, docs = null, customReminders = [], menu = null, recipes = null, prefs = null, helper, arrangedRestDays, leaveLogs, shStatuses, payments, workTasks, workRules, shopLists, shopItems, priceCatalog }) {
   const safeHelper = {
     id: helper.id,
     name: helper.name,
@@ -134,6 +134,7 @@ export function buildSharePayload({ includeDocs = false, docs = null, customRemi
       .map((r) => ({ id: r.id, title: r.title, date: r.date, repeat: r.repeat, note: r.note || "" })),
     menu: menu || undefined,
     recipes: recipes || undefined,
+    prefs: prefs || undefined,
     priceCatalog: (priceCatalog || []).map((c) => ({
       key: c.key,
       name: c.name,
