@@ -86,7 +86,7 @@ export const STATUTORY_HOLIDAYS = {
     { date: "2026-02-18", nameZh: "農曆年初二", nameEn: "The second day of Lunar New Year" },
     { date: "2026-02-19", nameZh: "農曆年初三", nameEn: "The third day of Lunar New Year" },
     { date: "2026-04-05", nameZh: "清明節", nameEn: "Ching Ming Festival" },
-    { date: "2026-04-06", nameZh: "復活節星期一", nameEn: "Easter Monday", noteZh: "由2026年起新增為法定假日" },
+    { date: "2026-04-06", nameZh: "復活節星期一", nameEn: "Easter Monday", noteZh: "由2026年起新增為法定假日", noteEn: "Added as a statutory holiday from 2026" },
     { date: "2026-05-01", nameZh: "勞動節", nameEn: "Labour Day" },
     { date: "2026-05-24", nameZh: "佛誕", nameEn: "The Birthday of the Buddha" },
     { date: "2026-06-19", nameZh: "端午節", nameEn: "Tuen Ng Festival" },
@@ -112,6 +112,7 @@ export const STATUTORY_HOLIDAYS = {
       nameZh: "農曆年初四",
       nameEn: "The fourth day of Lunar New Year",
       noteZh: "2027年農曆年初二適逢星期日，依法以年初四作為法定假日",
+      noteEn: "The second day of Lunar New Year 2027 falls on a Sunday, so by law the fourth day is the statutory holiday",
     },
     { date: "2027-03-29", nameZh: "復活節星期一", nameEn: "Easter Monday" },
     { date: "2027-04-05", nameZh: "清明節", nameEn: "Ching Ming Festival" },
@@ -397,6 +398,7 @@ export const DEMO_HELPER = {
   restDay: 0,
   phone: "",
   notes: "示範資料：2026年2月1日開始的兩年合約，可隨意修改或刪除。",
+  notesEn: "Demo data: a two-year contract starting 1 February 2026. Edit or delete it freely.",
   winterChoice: "christmas",
   grantGeneralHolidays: false,
 };
@@ -404,9 +406,9 @@ export const DEMO_HELPER = {
 export const GUIDE_CHECKLIST_DEFAULTS = GUIDE_SECTIONS.map((s) => s.id);
 
 export const SHOP_PLACES = [
-  { id: "market", zh: "街市" },
-  { id: "supermarket", zh: "超市" },
-  { id: "other", zh: "其他" },
+  { id: "market", zh: "街市", en: "Market" },
+  { id: "supermarket", zh: "超市", en: "Supermarket" },
+  { id: "other", zh: "其他", en: "Other" },
 ];
 
 /**
@@ -418,79 +420,106 @@ export const HELPER_GUIDE_SECTIONS = [
   {
     id: "contract",
     titleZh: "你的僱傭合約",
+    titleEn: "Your employment contract",
     bodyZh:
       "在香港工作，你與僱主必須簽署入境事務處指定的「標準僱傭合約」（表格 ID 407）。這是唯一獲承認的外傭僱傭合約。合約期通常為兩年。合約寫明的每月工資，不可低於簽署／申請當時的最低許可工資。請自行保管合約副本，方便核對工資、休息日、住址和到期日。",
+    bodyEn:
+      "In Hong Kong, you and your employer must sign the Standard Employment Contract (Form ID 407) prescribed by the Immigration Department. It is the only recognised FDH contract. The term is usually two years. The monthly wage stated in the contract must not be lower than the Minimum Allowable Wage at the time of signing or application. Keep your own copy of the contract so you can check your wage, rest days, address and end date.",
     links: [
-      { zh: "入境處：外籍家庭傭工", href: OFFICIAL_LINKS.immdFdh },
-      { zh: "標準僱傭合約 ID 407", href: OFFICIAL_LINKS.id407 },
+      { zh: "入境處：外籍家庭傭工", en: "ImmD: Foreign Domestic Helpers", href: OFFICIAL_LINKS.immdFdh },
+      { zh: "標準僱傭合約 ID 407", en: "Standard Employment Contract ID 407", href: OFFICIAL_LINKS.id407 },
     ],
   },
   {
     id: "live-in",
     titleZh: "住所與工作地點",
+    titleEn: "Accommodation and place of work",
     bodyZh:
       "你須在合約列明的僱主住址工作和居住（少數在2003年4月1日前已獲入境處批准在外住宿的安排除外）。即使在港放取休息日、法定假日或年假，一般仍須遵守留宿規定。僱主須免費提供合適、有合理私隱、並設有傢具的居所。不適當的住宿例如在走廊設臨時床鋪，或要求你與一名異性成年／青少年同房。",
-    links: [{ zh: "入境處說明", href: OFFICIAL_LINKS.immdFdh }],
+    bodyEn:
+      "You must live and work at the employer’s address stated in the contract (with limited exceptions for arrangements approved by the Immigration Department before 1 April 2003). The live-in requirement generally still applies on rest days, statutory holidays and annual leave spent in Hong Kong. The employer must provide suitable free accommodation with reasonable privacy and furniture. Unsuitable examples include a makeshift bed in a corridor, or sharing a room with an adult or teenager of the opposite sex.",
+    links: [{ zh: "入境處說明", en: "ImmD guidance", href: OFFICIAL_LINKS.immdFdh }],
   },
   {
     id: "no-other-work",
     titleZh: "只可為這份合約工作",
+    titleEn: "Work only under this contract",
     bodyZh:
       "你只可為合約訂明的僱主，在訂明住址料理家務，不得受僱於其他人士或從事其他職務。僱主亦不得安排你到其他住戶、其他地址，或做非家務／商業工作。違反逗留條件，外傭及教唆者都可能被檢控，日後的簽證申請亦可能受影響。",
-    links: [{ zh: "勞工處外傭專頁", href: OFFICIAL_LINKS.fdhPortal }],
+    bodyEn:
+      "You may only do domestic work for the employer named in the contract, at the stated address, and may not work for anyone else or do other jobs. Your employer must not send you to other households or addresses, or to do non-domestic or commercial work. Breaching conditions of stay may lead to prosecution of both the helper and anyone who instigated it, and may affect future visa applications.",
+    links: [{ zh: "勞工處外傭專頁", en: "Labour Department FDH page", href: OFFICIAL_LINKS.fdhPortal }],
   },
   {
     id: "wages",
     titleZh: "工資與食物",
+    titleEn: "Wages and food",
     bodyZh:
       "僱主不可與你私下協議，給予低於當時最低許可工資的薪酬。工資須每月至少支付一次，並不得遲於工資期屆滿後7天。建議以銀行轉帳或支票收取，並保留紀錄、簽署收條。根據標準合約，僱主須提供免費膳食；如不提供免費食物，則須支付不少於官方訂明的食物津貼。現時（適用於2026年10月3日或之後簽訂的合約）最低許可工資為每月5,220元，食物津貼不少於每月1,236元。較早簽訂的合約，仍以該份合約寫明的工資為準。",
+    bodyEn:
+      "Your employer must not agree privately to pay you less than the prevailing Minimum Allowable Wage. Wages must be paid at least once a month, and no later than 7 days after the end of the wage period. Receiving wages by bank transfer or cheque, keeping records and signing receipts is recommended. Under the standard contract, the employer must provide free food, or otherwise pay at least the officially prescribed food allowance. For contracts signed on or after 3 October 2026, the Minimum Allowable Wage is $5,220 a month and the food allowance is at least $1,236 a month. For earlier contracts, the wage stated in that contract applies.",
     links: [
-      { zh: "2026年最低許可工資公布", href: OFFICIAL_LINKS.maw2026 },
-      { zh: "勞工處常見問題", href: OFFICIAL_LINKS.fdhFaq },
+      { zh: "2026年最低許可工資公布", en: "2026 Minimum Allowable Wage announcement", href: OFFICIAL_LINKS.maw2026 },
+      { zh: "勞工處常見問題", en: "Labour Department FAQ", href: OFFICIAL_LINKS.fdhFaq },
     ],
   },
   {
     id: "rest-holidays",
     titleZh: "休息日、法定假日與年假",
+    titleEn: "Rest days, statutory holidays and annual leave",
     bodyZh:
       "休息日、法定假日及有薪年假是三項分開的權利，不能互相取代。每7天你應享有不少於1個連續24小時的休息日；僱主不可強迫你在休息日工作。你享有的是《僱傭條例》下的法定假日，並非自動享有所有公眾假期（銀行假）。不論年資長短，你都有權放法定假日；但須在緊接該法定假日之前已按連續性合約受僱滿3個月，才享有假日薪酬。僱主不得以款項代替法定假日。如須在法定假日工作，僱主須至少提前48小時通知，並在該日之前或之後60天內安排另定假日。為同一僱主工作滿12個月後，可享有薪年假：第1及第2年各7天，其後按年增加1天，最多14天。年假期內遇上的休息日或法定假日，不應算作年假日數。年假日期應雙方商議，僱主須至少提前14天書面通知。",
+    bodyEn:
+      "Rest days, statutory holidays and paid annual leave are three separate entitlements and cannot replace one another. You should get at least one continuous 24-hour rest day in every 7 days, and your employer cannot force you to work on a rest day. You are entitled to statutory holidays under the Employment Ordinance, not automatically every general (bank) holiday. You are entitled to statutory holidays regardless of length of service, but holiday pay applies only if you have been employed under a continuous contract for 3 months immediately before the holiday. Your employer may not pay money in place of a statutory holiday. If you must work on a statutory holiday, your employer must give at least 48 hours’ notice and arrange a substitute holiday within 60 days before or after. After 12 months with the same employer you are entitled to paid annual leave: 7 days in each of years 1 and 2, then one more day per year, up to 14 days. Rest days or statutory holidays falling within annual leave should not be counted as annual leave days. Annual leave dates should be agreed by both sides, with at least 14 days’ written notice from the employer.",
     links: [
-      { zh: "《僱傭條例》法定假日說明", href: OFFICIAL_LINKS.employmentOrdinanceSH },
-      { zh: "勞工處法定假日一覽", href: OFFICIAL_LINKS.shList },
+      { zh: "《僱傭條例》法定假日說明", en: "Employment Ordinance: statutory holidays", href: OFFICIAL_LINKS.employmentOrdinanceSH },
+      { zh: "勞工處法定假日一覽", en: "Labour Department holiday list", href: OFFICIAL_LINKS.shList },
     ],
   },
   {
     id: "insurance-medical",
     titleZh: "勞保、醫療與安全",
+    titleEn: "Insurance, medical care and safety",
     bodyZh:
       "僱主必須為你投購僱員補償保險（勞保）。根據標準合約，你在受僱期間（但不包括自願因私人理由離港期間）生病或受傷，不論是否因工作引致，僱主須提供免費醫療，包括診症、住院及牙科急診。你須接受僱主提供的註冊醫生診治。清潔窗外的一面須遵守標準合約的安全規定，你可拒絕不符合規定的外窗清潔工作。如發生工傷，僱主須在14天內（死亡個案為7天）向勞工處呈報。",
-    links: [{ zh: "勞工處外傭專頁", href: OFFICIAL_LINKS.fdhPortal }],
+    bodyEn:
+      "Your employer must take out employees’ compensation insurance for you. Under the standard contract, if you are ill or injured during employment (not including time you voluntarily spend outside Hong Kong for personal reasons), whether or not it is work-related, the employer must provide free medical treatment, including consultations, hospital stays and dental emergencies. You must accept treatment from a registered doctor chosen by the employer. Cleaning the outside of windows must follow the safety rules in the standard contract, and you may refuse external window cleaning that does not comply. If a work injury occurs, the employer must report it to the Labour Department within 14 days (7 days in fatal cases).",
+    links: [{ zh: "勞工處外傭專頁", en: "Labour Department FDH page", href: OFFICIAL_LINKS.fdhPortal }],
   },
   {
     id: "documents",
     titleZh: "證件與私隱",
+    titleEn: "Documents and privacy",
     bodyZh:
       "護照、身分證明和其他個人證件屬於你本人，僱主不應扣留。你應有足夠空間放置私人物品，僱主不應隨意翻查，亦應尊重你的文化和宗教需要（例如膳食安排），並給予足夠睡眠和休息。若需要夜間工作，應在日間提供足夠休息。",
-    links: [{ zh: "僱用外傭實用指南（PDF）", href: OFFICIAL_LINKS.practicalGuide }],
+    bodyEn:
+      "Your passport, identity documents and other personal documents belong to you, and your employer should not hold them. You should have enough space for your personal belongings, your employer should not search them without reason, and your cultural and religious needs (for example meal arrangements) should be respected, with enough sleep and rest. If night work is needed, enough rest should be given during the day.",
+    links: [{ zh: "僱用外傭實用指南（PDF）", en: "Practical Guide for Employing FDHs (PDF)", href: OFFICIAL_LINKS.practicalGuide }],
   },
   {
     id: "end-renew",
     titleZh: "合約屆滿、終止與續約",
+    titleEn: "Expiry, termination and renewal",
     bodyZh:
       "合約完成或提早終止後，僱主須提供返回原居地的免費機票和旅費，並清付工資及《僱傭條例》下應付的其他款項。非合約屆滿而終止時，任何一方一般須給予1個月書面通知，或支付1個月工資作為代通知金。雙方須在合約終止後7天內通知入境處。如雙方同意續約，你通常須在新合約生效前，由僱主支付費用返回原居地放取不少於7天假期（除非事先獲入境處處長批准延期逗留）。續約是新的簽證申請，入境處一般建議在現有合約屆滿前約8星期提交。",
+    bodyEn:
+      "After the contract ends or is terminated early, the employer must provide free return airfare and travel costs to your place of origin, and pay your wages and other amounts due under the Employment Ordinance. If the contract is ended other than by expiry, either side generally must give one month’s written notice or pay one month’s wages in lieu. Both sides must notify the Immigration Department within 7 days after termination. If both sides agree to renew, you generally must return home at the employer’s expense for at least 7 days before the new contract starts (unless the Director of Immigration approves an extension of stay in advance). Renewal is a new visa application, and the Immigration Department generally recommends submitting it about 8 weeks before the current contract expires.",
     links: [
-      { zh: "入境處：外籍家庭傭工", href: OFFICIAL_LINKS.immdFdh },
-      { zh: "常見問題", href: OFFICIAL_LINKS.fdhFaq },
+      { zh: "入境處：外籍家庭傭工", en: "ImmD: Foreign Domestic Helpers", href: OFFICIAL_LINKS.immdFdh },
+      { zh: "常見問題", en: "FAQ", href: OFFICIAL_LINKS.fdhFaq },
     ],
   },
   {
     id: "help",
     titleZh: "遇到問題可以向哪裏求助",
+    titleEn: "Where to get help",
     bodyZh:
       "本應用只是規劃工具，不是法律意見。有關僱傭合約或《僱傭條例》的問題，可向勞工處勞資關係科查詢或要求調停。勞工處熱線：2717 1771（由1823接聽）。入境簽證事宜：入境處熱線 2824 6111。你亦可參閱勞工處外傭專頁及《僱用外籍家庭傭工實用指南》。",
+    bodyEn:
+      "This app is a planning tool, not legal advice. For questions about the employment contract or the Employment Ordinance, you can contact the Labour Department’s Labour Relations Division for enquiries or conciliation. Labour Department hotline: 2717 1771 (answered via 1823). For visa matters: Immigration Department hotline 2824 6111. You can also read the Labour Department’s FDH page and the Practical Guide for Employing Foreign Domestic Helpers.",
     links: [
-      { zh: "勞工處外傭專頁", href: OFFICIAL_LINKS.fdhPortal },
-      { zh: "僱用外傭實用指南（PDF）", href: OFFICIAL_LINKS.practicalGuide },
+      { zh: "勞工處外傭專頁", en: "Labour Department FDH page", href: OFFICIAL_LINKS.fdhPortal },
+      { zh: "僱用外傭實用指南（PDF）", en: "Practical Guide for Employing FDHs (PDF)", href: OFFICIAL_LINKS.practicalGuide },
     ],
   },
 ];
