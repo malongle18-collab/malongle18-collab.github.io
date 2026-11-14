@@ -1,5 +1,5 @@
 /** Meal plan (今日餐單) and recipes (菜譜): pure data helpers, no DOM. */
-import { compressImageFile } from "./share.js?v=10";
+import { compressImageFile } from "./share.js?v=11";
 
 export const DEFAULT_SLOT_KEYS = ["breakfast", "lunch", "dinner", "snack"];
 export const MAX_SLOTS = 12;
