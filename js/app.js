@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=11";
+} from "./data.js?v=12";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=11";
-import { escapeHtml, icon } from "./icons.js?v=11";
+} from "./dates.js?v=12";
+import { escapeHtml, icon } from "./icons.js?v=12";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=11";
+} from "./reminders.js?v=12";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=11";
+} from "./rules.js?v=12";
 import {
   arrangedRestList,
   currentHelper,
@@ -91,7 +91,7 @@ import {
   toggleArrangedRestDay,
   normalizeConsent,
   uid,
-} from "./storage.js?v=11";
+} from "./storage.js?v=12";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -117,7 +117,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=11";
+} from "./share.js?v=12";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -132,29 +132,55 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=11";
+} from "./docs.js?v=12";
 import {
+  CATEGORIES,
+  DIET_KEYS,
+  DIFFICULTIES,
   MAX_DISHES_PER_SLOT,
   MAX_SLOTS,
   SHARE_MENU_FUTURE_DAYS,
   SHARE_MENU_PAST_DAYS,
+  aggregateIngredients,
+  allRecipes,
   copyDay,
   dayCount,
   dayDishes,
+  dietConflicts,
+  dishKey,
   dishLabel,
+  eatenDaysAgo,
+  findUrl,
+  ingName,
+  ingQty,
+  isHalalFriendly,
   menuForShare,
+  menuShareText,
   newDish,
   newRecipe,
+  nextRecipeNo,
+  normalizeDiet,
+  normalizeRecipes,
+  normalizeSourceUrl,
   parseIngredient,
+  parseRecipeText,
   pruneDay,
+  recipeEatenDaysAgo,
+  recipeName,
+  recipeNameOther,
+  recipeNoLabel,
+  recipeShareText,
   recipesForShare,
   shiftISO,
   slotLabel,
-  splitLines,
   splitTags,
+  stepText,
+  tipsText,
+  urlHost,
   weekDates,
-} from "./menu.js?v=11";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tp } from "./i18n.js?v=11";
+  webSearchUrls,
+} from "./menu.js?v=12";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=12";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -202,7 +228,16 @@ const ui = {
   menuDate: todayISO(),
   recipeId: null,
   recipeQuery: "",
+  recipeCat: "all",
+  recipeSrc: "all",
+  recipeDiet: [],
+  recipeLang: "auto",
+  dietOpen: false,
+  menuView: "day",
+  cookStep: 0,
+  cookTicks: {},
   recipePhoto: "",
+  recipeDraft: null,
   slotArm: "",
 };
 
@@ -211,6 +246,7 @@ function today() {
 }
 
 function save() {
+  saveRev += 1;
   try {
     saveState(state);
     return true;
@@ -268,7 +304,7 @@ function setTab(tab) {
   ui.slotArm = "";
   if ((tab === "shop-detail" || tab === "h-shop-detail") && ui.shopListId) {
     location.hash = `#/${tab}/${ui.shopListId}`;
-  } else if ((tab === "recipe" || tab === "h-recipe") && ui.recipeId) {
+  } else if ((tab === "recipe" || tab === "h-recipe" || tab === "cook" || tab === "h-cook") && ui.recipeId) {
     location.hash = `#/${tab}/${ui.recipeId}`;
   } else {
     location.hash = `#/${tab}`;
@@ -289,6 +325,7 @@ const EMPLOYER_ROUTES = new Set([
   "menu",
   "recipes",
   "recipe",
+  "cook",
   "share",
   "more",
   "guide",
@@ -307,12 +344,15 @@ const HELPER_ROUTES = new Set([
   "h-menu",
   "h-recipes",
   "h-recipe",
+  "h-cook",
   "h-pay",
   "h-remind",
   "h-rights",
   "h-more",
   "h-enter",
 ]);
+
+let autoTried = "";
 
 function parseHash() {
   const raw = (location.hash || "").replace(/^#\/?/, "");
@@ -321,6 +361,11 @@ function parseHash() {
     ui.pendingShare = incoming;
     role = "helper";
     ui.tab = "h-enter";
+    // Same phone, already unlocked: try the saved PIN so a newer link just updates the data.
+    if (helperSession?.pin && incoming !== autoTried) {
+      autoTried = incoming;
+      autoUpdateFromLink(incoming);
+    }
     return;
   }
   const [tab, extra] = raw.split("/");
@@ -337,13 +382,13 @@ function parseHash() {
   if (HELPER_ROUTES.has(tab)) {
     ui.tab = tab;
     if (tab === "h-shop-detail" && extra) ui.shopListId = extra;
-    if (tab === "h-recipe" && extra) ui.recipeId = extra;
+    if ((tab === "h-recipe" || tab === "h-cook") && extra) ui.recipeId = extra;
     return;
   }
   if (EMPLOYER_ROUTES.has(tab)) {
     ui.tab = tab;
     if (tab === "shop-detail" && extra) ui.shopListId = extra;
-    if (tab === "recipe" && extra) ui.recipeId = extra;
+    if ((tab === "recipe" || tab === "cook") && extra) ui.recipeId = extra;
     return;
   }
   ui.tab = role === "helper" ? "h" : "home";
@@ -463,7 +508,7 @@ function pageTitleKey() {
     pay: "pay.title", remind: "home.reminders", shop: "shop.title", "shop-detail": "shop.title",
     share: "share.title", guide: "more.guide", backup: "backup.title", "helper-new": "helper.add", "helper-edit": "form.editTitle",
     h: "tab.mine", "h-leave": "tab.leave", "h-tasks": "tab.tasks", "h-rules": "tab.rules", "h-more": "tab.more",
-    menu: "menu.title", recipes: "recipe.title", recipe: "recipe.title",
+    menu: "menu.title", recipes: "recipe.title", recipe: "recipe.title", cook: "cook.title", "h-cook": "cook.title",
     "h-menu": "menu.title", "h-recipes": "recipe.title", "h-recipe": "recipe.title",
     "h-shop": "shop.title", "h-shop-detail": "shop.title", "h-pay": "pay.title", "h-remind": "home.reminders", "h-rights": "hmore.rights",
   };
@@ -537,9 +582,9 @@ function sidebar() {
       ? "shop"
       : ui.tab === "h-shop-detail"
         ? "h-shop"
-        : role !== "helper" && ["menu", "recipes", "recipe"].includes(ui.tab)
+        : role !== "helper" && ["menu", "recipes", "recipe", "cook"].includes(ui.tab)
           ? "menu"
-          : role === "helper" && ["h-menu", "h-recipes", "h-recipe"].includes(ui.tab)
+          : role === "helper" && ["h-menu", "h-recipes", "h-recipe", "h-cook"].includes(ui.tab)
             ? "h-menu"
             : role !== "helper" && MORE_GROUP.includes(ui.tab)
           ? "more"
@@ -576,8 +621,8 @@ function tabbar() {
   const tabs = role === "helper" ? HELPER_TABS : EMPLOYER_TABS;
   const count = role === "employer" ? badgeCount() : 0;
   const moreIds = role === "helper"
-    ? ["h-more", "h-pay", "h-remind", "h-rights", "h-shop", "h-shop-detail", "h-menu", "h-recipes", "h-recipe"]
-    : ["more", "guide", "backup", "pay", "remind", "share", "shop", "shop-detail", "menu", "recipes", "recipe"];
+    ? ["h-more", "h-pay", "h-remind", "h-rights", "h-shop", "h-shop-detail", "h-menu", "h-recipes", "h-recipe", "h-cook"]
+    : ["more", "guide", "backup", "pay", "remind", "share", "shop", "shop-detail", "menu", "recipes", "recipe", "cook"];
   return `
     <nav class="tabbar" aria-label="${tr("aria.mainTabs")}">
       ${tabs
@@ -765,7 +810,7 @@ function detailRow(k, v) {
 
 
 /* ---------- keep typed form values across re-renders (toast, language, uploads) ---------- */
-const KEEP_FORMS = ["helper-form", "pay-form", "consent-form", "recipe-form", "dish-form"];
+const KEEP_FORMS = ["helper-form", "pay-form", "consent-form", "recipe-form", "dish-form", "shop-list-form", "gen-form", "list-recipes-form", "web-recipe-form"];
 
 function captureForms() {
   const out = {};
@@ -933,6 +978,7 @@ function viewHome() {
       </div>
       <button class="btn" type="button" data-go="helper-edit">${icon("plus", { size: 16 })}${tr("common.editData")}</button>
     </section>
+    ${sendUpdateCard("home")}
 
     <section class="stat-grid">
       ${statCard({ label: tr("home.stat.contract"), ic: "clock", value: contractValue, unit: contractUnit, foot: contractFoot })}
@@ -1819,15 +1865,90 @@ function shopMarks(lists) {
   return marks;
 }
 
-function shopRow(list, items, detailTab) {
+function shopCtx() {
+  if (role === "helper") {
+    const p = sessionPayload();
+    return { items: p?.shopItems || [], lists: p?.shopLists || [] };
+  }
+  return { items: state.shopItems, lists: state.shopLists };
+}
+
+/** Same-name item marked bought in an earlier list within the "recent" window (or null). */
+function recentBuyFor(item, ctx) {
+  const windowDays = prefsData().recentBuyDays;
+  if (!windowDays || !item || item.bought) return null;
+  const key = catalogKey(item.name);
+  if (!key) return null;
+  const mine = ctx.lists.find((l) => l.id === item.listId);
+  const ref = (mine && listDate(mine)) || today();
+  let best = null;
+  for (const it of ctx.items) {
+    if (!it.bought || it.id === item.id || catalogKey(it.name) !== key) continue;
+    if (item.listId && it.listId === item.listId) continue;
+    const l = ctx.lists.find((x) => x.id === it.listId);
+    const d = l ? listDate(l) : "";
+    if (!d || d > ref) continue;
+    const days = daysBetween(d, ref);
+    if (days < 0 || days > windowDays) continue;
+    if (!best || d > best.date) best = { date: d, days, price: it.paidPrice !== "" && it.paidPrice != null ? Number(it.paidPrice) : null };
+  }
+  return best;
+}
+
+function recentText(r) {
+  const hasPrice = r.price != null && Number.isFinite(r.price);
+  const vars = { n: r.days, price: hasPrice ? formatMoney(r.price) : "" };
+  if (r.days === 0) return tr(hasPrice ? "shop.recent.todayPrice" : "shop.recent.today", vars);
+  return tp(hasPrice ? "shop.recent.daysPrice" : "shop.recent.days", r.days, vars);
+}
+
+function recentBadge(item, ctx) {
+  const r = recentBuyFor(item, ctx);
+  return r ? `<span class="recent-badge" data-recent>${escapeHtml(recentText(r))}</span>` : "";
+}
+
+function shopSettingsCard(ro) {
+  const days = prefsData().recentBuyDays;
+  if (ro) return `<p class="tiny muted" style="margin:0.6rem 0 0">${days ? tr("shop.recentSetting.on", { n: days }) : tr("shop.recentSetting.off")}</p>`;
+  return `<div class="card recent-setting">
+    <label class="field" style="margin:0"><span><strong>${tr("shop.recentSetting.title")}</strong><span class="hint">${tr("shop.recentSetting.hint")}</span></span>
+      <select data-action="recent-days">${RECENT_CHOICES.map((n) => `<option value="${n}" ${n === days ? "selected" : ""}>${n ? tr("shop.recentSetting.opt", { n }) : tr("shop.recentSetting.optOff")}</option>`).join("")}</select>
+    </label>
+  </div>`;
+}
+
+const CARD_MAX_ITEMS = 8;
+function shopCard(list, items, detailTab, ctx) {
   const bought = items.filter((i) => i.bought).length;
-  return `<button class="row" type="button" data-go="${detailTab}" data-list="${list.id}">
-    <div class="grow">
-      <div class="title">${escapeHtml(list.title || placeLabel(list.place))}</div>
-      <div class="sub">${listDateLabel(list)}${tr("log.sep")}${placeLabel(list.place)}${tr("log.sep")}${items.length ? tr("shop.progress", { done: bought, total: items.length }) : tr("shop.noItems")}</div>
-    </div>
-    <span class="status-pill ${list.status === "done" ? "" : "watch"}">${list.status === "done" ? tr("shop.status.done") : tr("shop.status.open")}</span>
-  </button>`;
+  const shown = items.slice(0, CARD_MAX_ITEMS);
+  const hiddenDone = items.slice(CARD_MAX_ITEMS).filter((i) => i.bought).length;
+  const tickAction = role === "helper" ? "h-item-bought" : "item-tick";
+  const pct = items.length ? Math.round((bought / items.length) * 100) : 0;
+  return `<article class="card shop-card" data-shop-card data-total="${items.length}" data-hidden-done="${hiddenDone}">
+    <button class="shop-card-head" type="button" data-go="${detailTab}" data-list="${list.id}">
+      <span class="grow">
+        <span class="title">${escapeHtml(list.title || placeLabel(list.place))}</span>
+        <span class="sub">${listDateLabel(list)}${tr("log.sep")}${placeLabel(list.place)}</span>
+      </span>
+      <span class="status-pill ${list.status === "done" ? "" : "watch"}">${list.status === "done" ? tr("shop.status.done") : tr("shop.status.open")}</span>
+      ${icon("chevron", { size: 16 })}
+    </button>
+    ${
+      items.length
+        ? `<div class="shop-prog-row"><span class="shop-prog" data-prog>${tr("shop.card.progress", { done: bought, total: items.length })}</span><i class="prog-bar"><b data-prog-bar style="width:${pct}%"></b></i></div>
+    <ul class="tick-list">${shown
+      .map(
+        (it) => `<li class="tick-item ${it.bought ? "is-bought" : ""}" data-item-row>
+        <label class="tick-label"><input type="checkbox" data-tick data-action="${tickAction}" data-id="${escapeHtml(it.id)}" ${it.bought ? "checked" : ""}>
+          <span class="tick-text"><span class="tick-name">${escapeHtml(it.name)}${it.qty ? `<small>${escapeHtml(it.qty)}</small>` : ""}</span>${it.alt ? `<small class="alt">${escapeHtml(it.alt)}</small>` : ""}</span></label>
+        ${recentBadge(it, ctx)}
+      </li>`
+      )
+      .join("")}</ul>
+    ${items.length > CARD_MAX_ITEMS ? `<button class="linkish tick-more" type="button" data-go="${detailTab}" data-list="${list.id}">${tr("shop.card.more", { n: items.length - CARD_MAX_ITEMS })}</button>` : ""}`
+        : `<p class="tiny muted" style="margin:0.5rem 0 0">${tr("shop.noItems")}</p>`
+    }
+  </article>`;
 }
 
 function shopBrowser(lists, itemsOf, detailTab, emptyKey) {
@@ -1838,8 +1959,8 @@ function shopBrowser(lists, itemsOf, detailTab, emptyKey) {
     <button type="button" class="seg-btn ${ui.shopView === "cal" ? "is-on" : ""}" data-action="shop-view" data-view="cal" aria-pressed="${ui.shopView === "cal"}">${tr("shop.view.cal")}</button>
   </div>`;
   if (ui.shopView !== "cal") {
-    return `${seg}<div class="card" style="margin-top:0.9rem">${
-      sorted.length ? sorted.map((l) => shopRow(l, itemsOf(l.id), detailTab)).join("") : `<p class="muted" style="margin:0">${tr(emptyKey)}</p>`
+    return `${seg}<div class="shop-cards" style="margin-top:0.9rem">${
+      sorted.length ? sorted.map((l) => shopCard(l, itemsOf(l.id), detailTab, shopCtx())).join("") : `<div class="card"><p class="muted" style="margin:0">${tr(emptyKey)}</p></div>`
     }</div>`;
   }
   const { year, month } = ui.shopCal;
@@ -1863,10 +1984,10 @@ function shopBrowser(lists, itemsOf, detailTab, emptyKey) {
       day
         ? `<section class="section" data-shop-day-panel>
             <div class="section-head"><h2>${tr("shop.day.title", { date: formatDate(day, { weekday: true }) })}</h2></div>
-            <div class="card">${
+            <div class="shop-cards">${
               dayLists.length
-                ? dayLists.map((l) => shopRow(l, itemsOf(l.id), detailTab)).join("")
-                : `<p class="muted" style="margin:0">${tr("shop.day.none")}</p>`
+                ? dayLists.map((l) => shopCard(l, itemsOf(l.id), detailTab, shopCtx())).join("")
+                : `<div class="card"><p class="muted" style="margin:0">${tr("shop.day.none")}</p></div>`
             }</div>
             ${role !== "helper" ? `<div class="btn-row"><button class="btn secondary" type="button" data-action="shop-new" data-date="${day}">${tr("shop.day.new")}</button></div>` : ""}
           </section>`
@@ -1899,6 +2020,12 @@ function itemHintBlock(cat) {
     <div class="price-hist" hidden>${priceHistoryHtml(cat, "stored")}</div>`;
 }
 
+/** In the add-item sheet: warn if this name was bought recently in an earlier list. */
+function itemRecentHint(name, itemId, listId) {
+  const r = recentBuyFor({ id: itemId || "", name, listId, bought: false }, shopCtx());
+  return r ? `<p class="recent-badge block" data-recent>${escapeHtml(recentText(r))}</p>` : "";
+}
+
 function catalogNameOptions() {
   const names = new Map();
   for (const c of state.priceCatalog || []) names.set(catalogKey(c.name), c.name);
@@ -1919,6 +2046,7 @@ function viewShop() {
       <button class="btn" type="button" data-action="shop-new">${tr("shop.new")}</button>
     </div>
     <div style="margin-top:0.9rem">${shopBrowser(listsFor(h), itemsForList, "shop-detail", "shop.none")}</div>
+    ${shopSettingsCard(false)}
   `;
 }
 
@@ -1940,6 +2068,7 @@ function viewShopDetail() {
     </label>
     <div class="btn-row">
       <button class="btn" type="button" data-action="item-new" data-list="${list.id}">${tr("shop.addItem")}</button>
+      <button class="btn secondary" type="button" data-action="list-recipes-open" data-list="${list.id}">${icon("book", { size: 16 })}${tr("shop.pick.open")}</button>
       ${
         list.status !== "done"
           ? `<button class="btn secondary" type="button" data-action="shop-complete" data-list="${list.id}">${tr("shop.complete")}</button>`
@@ -1950,16 +2079,20 @@ function viewShopDetail() {
       ${
         items.length
           ? items
-              .map((item) => {
+              .map((item, idx) => {
                 const cat = findCatalog(state, item.name);
                 const hint = cat
                   ? `<button type="button" class="price-hint-btn" data-action="price-history" data-key="${escapeHtml(cat.key)}">${lastPriceText(cat)} <span class="hist-link">${tr("shop.hist.link")}</span></button>`
                   : "";
-                return `<div class="shop-item">
+                const head = item.group && item.group !== (items[idx - 1]?.group || "") ? `<h3 class="group-title">${escapeHtml(item.group)}</h3>` : "";
+                return `${head}<div class="shop-item ${item.bought ? "is-bought" : ""}" data-item-row>
                   <div class="thumb">${item.photo ? `<img src="${item.photo}" alt="">` : icon("image", { size: 22 })}</div>
                   <div>
-                    <div class="title" style="font-weight:650">${escapeHtml(item.name)}${item.qty ? tr("log.sep") + escapeHtml(item.qty) : ""}</div>
+                    <label class="tick-label tick-inline"><input type="checkbox" data-tick data-action="item-tick" data-id="${item.id}" ${item.bought ? "checked" : ""}>
+                    <span class="title" style="font-weight:650">${escapeHtml(item.name)}${item.qty ? tr("log.sep") + escapeHtml(item.qty) : ""}</span></label>
+                    ${item.alt ? `<div class="tiny muted">${escapeHtml(item.alt)}</div>` : ""}
                     ${item.note ? `<div class="tiny muted">${escapeHtml(item.note)}</div>` : ""}
+                    ${recentBadge(item, shopCtx())}
                     ${hint ? `<div class="price-hint">${hint}</div>` : ""}
                     <div class="chip-row" style="margin-top:0.4rem">
                       ${item.bought ? `<span class="tag ok">${tr("shop.bought")}</span>` : `<span class="tag">${tr("shop.notBought")}</span>`}
@@ -1981,55 +2114,94 @@ function viewShopDetail() {
   `;
 }
 
-async function generateShare() {
-  const h = helper();
-  if (!h) return toast(tr("toast.addHelperFirst"));
-  const pin = randomPin();
-  const shareId = uid("share");
-  const withDocs = Boolean(ui.shareDocs && hasIdInfo(h));
+/** Build the shared payload for a helper. Pure read of state; the same call feeds the change signature. */
+function sharePayloadFor(h, { recipes, menuShare, docs = null, withDocs = false }) {
+  return buildSharePayload({
+    includeDocs: withDocs,
+    docs,
+    helper: h,
+    arrangedRestDays: arrangedFor(h),
+    leaveLogs: state.leaveLogs,
+    shStatuses: state.shStatuses,
+    payments: state.payments,
+    workTasks: state.workTasks,
+    workRules: state.workRules,
+    shopLists: state.shopLists,
+    shopItems: state.shopItems,
+    priceCatalog: state.priceCatalog,
+    customReminders: state.customReminders,
+    menu: menuShare,
+    recipes,
+    prefs: { diet: normalizeDiet(state.settings.diet), recentBuyDays: prefsData().recentBuyDays },
+  });
+}
+
+function shareMenuWindow() {
+  return menuForShare(state.menu, shiftISO(today(), -SHARE_MENU_PAST_DAYS), shiftISO(today(), SHARE_MENU_FUTURE_DAYS));
+}
+
+function hashString(str) {
+  let h1 = 0x811c9dc5;
+  let h2 = 5381;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 16777619);
+    h2 = (Math.imul(h2, 33) + c) | 0;
+  }
+  return (h1 >>> 0).toString(16) + (h2 >>> 0).toString(16) + ":" + str.length;
+}
+
+let sigMemo = { rev: -1, key: "", sig: "" };
+let saveRev = 0;
+
+/** Synchronous fingerprint of what the helper would receive (no timestamps, photos reduced to a flag). */
+function shareSig(h) {
+  const key = `${h.id}|${today()}`;
+  if (sigMemo.rev === saveRev && sigMemo.key === key) return sigMemo.sig;
+  const recipes = (state.recipes || []).map((r) => ({ ...r, photo: r.photo ? "1" : "" }));
+  const p = sharePayloadFor(h, { recipes, menuShare: shareMenuWindow() });
+  delete p.generatedAt;
+  delete p.shareId;
+  const sig = hashString(JSON.stringify(p));
+  sigMemo = { rev: saveRev, key, sig };
+  return sig;
+}
+
+/** Encrypt a fresh snapshot. Drops recipe photos when the link would get too long for a chat message. */
+async function buildShare({ h, pin, shareId, withDocs, maxLen = 0 }) {
   const shareDocs = withDocs ? await docsForShare(h.docs) : null;
   if (withDocs && docsChars(shareDocs) > MAX_SHARE_DOC_CHARS) {
-    return toast(tr("share.docs.tooBig"));
+    toast(tr("share.docs.tooBig"));
+    return null;
   }
-  const menuShare = menuForShare(state.menu, shiftISO(today(), -SHARE_MENU_PAST_DAYS), shiftISO(today(), SHARE_MENU_FUTURE_DAYS));
+  const menuShare = shareMenuWindow();
   let recipesShare = await recipesForShare(state.recipes);
   let photosDropped = false;
   const makePayload = (recipes) => {
-    const p = buildSharePayload({
-      includeDocs: withDocs,
-      docs: shareDocs,
-      helper: h,
-      arrangedRestDays: arrangedFor(h),
-      leaveLogs: state.leaveLogs,
-      shStatuses: state.shStatuses,
-      payments: state.payments,
-      workTasks: state.workTasks,
-      workRules: state.workRules,
-      shopLists: state.shopLists,
-      shopItems: state.shopItems,
-      priceCatalog: state.priceCatalog,
-      customReminders: state.customReminders,
-      menu: menuShare,
-      recipes,
-    });
+    const p = sharePayloadFor(h, { recipes, menuShare, docs: shareDocs, withDocs });
     p.shareId = shareId;
     return p;
   };
-  let payload = makePayload(recipesShare);
-  let packed;
   try {
-    packed = await encryptShare(payload, pin);
-    const base = withDocs ? docsChars(shareDocs) * 1.4 : 0;
-    if (packed.length > base + 400000 && recipesShare.some((r) => r.photo)) {
+    let payload = makePayload(recipesShare);
+    let packed = await encryptShare(payload, pin);
+    const limit = maxLen || (withDocs ? docsChars(shareDocs) * 1.4 : 0) + 400000;
+    if (packed.length > limit && recipesShare.some((r) => r.photo)) {
       photosDropped = true;
       recipesShare = recipesShare.map((r) => ({ ...r, photo: "" }));
       payload = makePayload(recipesShare);
       packed = await encryptShare(payload, pin);
     }
+    return { packed, payload, photosDropped };
   } catch (err) {
     console.warn(err);
-    return toast(tr("toast.shareFailed"));
+    toast(tr("toast.shareFailed"));
+    return null;
   }
+}
+
+function recordShare(h, built, { pin, shareId, withDocs }) {
+  const { packed, payload } = built;
   state.helperAccess[h.id] = {
     shareId,
     packed: withDocs || packed.length > 120000 ? "" : packed,
@@ -2037,6 +2209,9 @@ async function generateShare() {
     generatedAt: payload.generatedAt,
     revoked: false,
     helperName: h.name,
+    pin,
+    sharedSig: shareSig(h),
+    sentAt: payload.generatedAt,
   };
   save();
   upsertInbox({
@@ -2046,12 +2221,109 @@ async function generateShare() {
     generatedAt: payload.generatedAt,
     label: h.name,
   });
-  ui.shareReveal = { pin, packed, url: shareUrl(packed), helperName: h.name, shareId, withDocs };
+}
+
+async function generateShare() {
+  const h = helper();
+  if (!h) return toast(tr("toast.addHelperFirst"));
+  const pin = randomPin();
+  const shareId = uid("share");
+  const withDocs = Boolean(ui.shareDocs && hasIdInfo(h));
+  const built = await buildShare({ h, pin, shareId, withDocs });
+  if (!built) return;
+  recordShare(h, built, { pin, shareId, withDocs });
+  ui.shareReveal = { pin, packed: built.packed, url: shareUrl(built.packed), helperName: h.name, shareId, withDocs };
+  ui.updateSent = null;
   ui.shareDocs = false;
   ui.tab = "share";
   location.hash = "#/share";
   render();
-  if (photosDropped) toast(tr("toast.sharePhotosDropped"));
+  if (built.photosDropped) toast(tr("toast.sharePhotosDropped"));
+}
+
+/** WhatsApp number for wa.me: digits only; a bare 8-digit number is treated as Hong Kong. Otherwise none. */
+function waPhone(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  const digits = s.replace(/\D/g, "");
+  if (/^(\+|00)/.test(s)) return digits.replace(/^00/, "");
+  if (/^[2-9]\d{7}$/.test(digits)) return `852${digits}`;
+  if (/^852[2-9]\d{7}$/.test(digits)) return digits;
+  return "";
+}
+
+function updateMessage(url) {
+  return `${tIn("zh-Hant", "update.msg", { app: tIn("zh-Hant", "app.name") })}\n\n${tIn("en", "update.msg", { app: tIn("en", "app.name") })}\n\n${url}`;
+}
+
+/** One tap: re-encrypt the latest data with the saved PIN and hand a fresh link to WhatsApp (or the share sheet). */
+async function sendUpdate(mode) {
+  const h = helper();
+  if (!h) return toast(tr("toast.addHelperFirst"));
+  const a = state.helperAccess[h.id];
+  if (!a || a.revoked || !a.pin) {
+    toast(tr("update.needFirst"));
+    ui.tab = "share";
+    location.hash = "#/share";
+    render();
+    return;
+  }
+  const built = await buildShare({ h, pin: a.pin, shareId: a.shareId, withDocs: false, maxLen: 45000 });
+  if (!built) return;
+  if (built.packed.length > 60000) {
+    toast(tr("update.tooBig"));
+    ui.tab = "share";
+    location.hash = "#/share";
+    render();
+    return;
+  }
+  recordShare(h, built, { pin: a.pin, shareId: a.shareId, withDocs: false });
+  const url = shareUrl(built.packed);
+  const msg = updateMessage(url);
+  const phone = waPhone(h.phone);
+  const wa = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+  ui.updateSent = { helperId: h.id, at: built.payload.generatedAt, wa, msg, phone: Boolean(phone) };
+  render();
+  if (mode === "native" && navigator.share) {
+    try {
+      await navigator.share({ title: tr("app.name"), text: msg.replace(url, "").trim(), url });
+    } catch {
+      /* cancelled */
+    }
+    return;
+  }
+  const win = window.open(wa, "_blank", "noopener,noreferrer");
+  if (!win) toast(tr("update.popupBlocked"));
+  else if (built.photosDropped) toast(tr("toast.sharePhotosDropped"));
+}
+
+/** Employer card: badge when data changed since the last snapshot sent to this helper. */
+function sendUpdateCard(where) {
+  const h = helper();
+  if (!h) return "";
+  const a = state.helperAccess[h.id];
+  const has = Boolean(a && !a.revoked);
+  const ready = has && a.pin;
+  const changed = has && (!a.sharedSig || a.sharedSig !== shareSig(h));
+  const sent = ui.updateSent && ui.updateSent.helperId === h.id ? ui.updateSent : null;
+  const lastSent = has && a.sentAt ? fmtDateTime(a.sentAt) : "";
+  const badge = !has ? "" : changed ? `<span class="su-badge changed" data-role="update-badge">${tr("update.badge.changed")}</span>` : `<span class="su-badge ok" data-role="update-badge">${tr("update.badge.ok")}</span>`;
+  const btn = ready
+    ? `<button class="btn" type="button" data-action="send-update">${icon("share", { size: 16 })}${tr("update.send")}</button>${navigator.share && where === "share" ? `<button class="btn secondary" type="button" data-action="send-update-native">${tr("update.sendNative")}</button>` : ""}`
+    : has
+      ? `<button class="btn" type="button" data-action="share-generate">${tr("update.renew")}</button>`
+      : `<a class="btn" href="#/share">${tr("update.create")}</a>`;
+  return `<section class="card send-update ${changed ? "is-changed" : ""}" data-role="send-update">
+    <div class="su-head"><strong>${tr("update.title")}</strong>${badge}</div>
+    <p class="tiny muted" style="margin:0.25rem 0 0.6rem">${!has ? tr("update.none") : changed ? tr("update.hint.changed") : tr("update.hint.ok")}${lastSent ? ` ${tr("update.lastSent", { when: lastSent })}` : ""}</p>
+    <div class="btn-row" style="margin:0">${btn}</div>
+    ${
+      sent
+        ? `<div class="su-sent"><p class="tiny" style="margin:0 0 0.4rem">✓ ${tr("update.sent", { when: fmtDateTime(sent.at) })}${sent.phone ? "" : ` ${tr("update.noPhone")}`}</p>
+        <div class="btn-row" style="margin:0"><a class="btn secondary small" href="${escapeHtml(sent.wa)}" target="_blank" rel="noopener noreferrer">${tr("update.openWa")}</a><button class="btn secondary small" type="button" data-action="update-copy">${tr("update.copyMsg")}</button></div></div>`
+        : ""
+    }
+  </section>`;
 }
 
 function viewShare() {
@@ -2070,6 +2342,8 @@ function viewShare() {
       </label>
     </div>
     <p class="tiny muted" style="margin:0 0 0.8rem">${tr("share.menuNote")}</p>
+    ${sendUpdateCard("share")}
+    ${access && !access.revoked && access.pin && !reveal ? `<p class="tiny muted" style="margin:0 0 0.8rem">${tr("share.pinSaved", { pin: escapeHtml(access.pin) })}</p>` : ""}
     ${
       reveal
         ? `<div class="card">
@@ -2361,7 +2635,8 @@ function viewHelperHome() {
       <div>
         <div class="eyebrow">${tr(greetingKey())} · ${tr("header.helperView")}</div>
         <h1 class="screen-title">${escapeHtml(h.name)}</h1>
-        <p class="lede">${tr("hhome.lede", { gen: p.generatedAt ? tr("hhome.generated", { date: formatDate(p.generatedAt.slice(0, 10)) }) : "" })}</p>
+        <p class="lede">${tr("hhome.lede", { gen: "" })}</p>
+        ${p.generatedAt ? `<p class="last-updated" data-role="last-updated">${helperSession?.updatedAt && Date.now() - Date.parse(helperSession.updatedAt) < 864e5 ? `<span class="su-badge ok">✓ ${tr("update.helper.badge")}</span> ` : ""}${tr("update.helper.last", { when: escapeHtml(fmtDateTime(p.generatedAt)) })}</p>` : ""}
       </div>
       <span class="status-pill ${pillClass}">${cs.label}</span>
     </section>
@@ -2595,6 +2870,7 @@ function viewHelperShop() {
     <h1 class="screen-title">${tr("shop.title")}</h1>
     <p class="lede">${tr("hshop.lede")}</p>
     ${shopBrowser(p.shopLists || [], (id) => (p.shopItems || []).filter((i) => i.listId === id), "h-shop-detail", "hshop.none")}
+    ${shopSettingsCard(true)}
   `;
 }
 
@@ -2613,20 +2889,23 @@ function viewHelperShopDetail() {
     <h1 class="screen-title">${escapeHtml(list.title || placeLabel(list.place))}</h1>
     <p class="lede">${listDateLabel(list)}${tr("log.sep")}${placeLabel(list.place)}${list.note ? tr("log.sep") + escapeHtml(list.note) : ""}${tr("period")}</p>
     ${items
-      .map((item) => {
+      .map((item, idx) => {
         const cat = catOf(item.name);
+        const head = item.group && item.group !== (items[idx - 1]?.group || "") ? `<h3 class="group-title">${escapeHtml(item.group)}</h3>` : "";
         const hint = cat
           ? `<button type="button" class="price-hint-btn" data-action="price-history" data-key="${escapeHtml(cat.key)}">${tr("hshop.lastPrice", { price: formatMoney(cat.lastPrice) })} <span class="hist-link">${tr("shop.hist.link")}</span></button>`
           : tr("hshop.afterBuy");
-        return `<div class="shop-item">
+        return `${head}<div class="shop-item ${item.bought ? "is-bought" : ""}" data-item-row>
           <div class="thumb">${item.photo ? `<img src="${item.photo}" alt="${escapeHtml(item.name)}">` : icon("image", { size: 22 })}</div>
           <div>
             <div class="title" style="font-weight:650">${escapeHtml(item.name)}${item.qty ? tr("log.sep") + escapeHtml(item.qty) : ""}</div>
+            ${item.alt ? `<div class="tiny muted">${escapeHtml(item.alt)}</div>` : ""}
             ${item.note ? `<div class="tiny muted">${escapeHtml(item.note)}</div>` : ""}
+            ${recentBadge(item, shopCtx())}
             <div class="price-hint">${hint}</div>
             <label class="switch-field">
               <span>${tr("hshop.got")}</span>
-              <span class="switch"><input type="checkbox" data-action="h-item-bought" data-id="${item.id}" ${item.bought ? "checked" : ""}><span></span></span>
+              <span class="switch"><input type="checkbox" data-tick data-action="h-item-bought" data-id="${item.id}" ${item.bought ? "checked" : ""}><span></span></span>
             </label>
             <label class="field" style="margin:0">
               <span>${tr("hshop.priceLabel")}</span>
@@ -2767,27 +3046,112 @@ function viewHelperMore() {
 
 /* ---------- meal plan (餐單) + recipes (菜譜) ---------- */
 
+const _recipeCache = new WeakMap();
+function sessionRecipes() {
+  const p = sessionPayload();
+  if (!p) return [];
+  let r = _recipeCache.get(p);
+  if (!r) {
+    r = normalizeRecipes(p.recipes);
+    _recipeCache.set(p, r);
+  }
+  return r;
+}
+
 function menuData() {
   if (role === "helper") {
     const p = sessionPayload();
-    return { menu: p?.menu || null, recipes: p?.recipes || [], ro: true };
+    return { menu: p?.menu || null, recipes: allRecipes(sessionRecipes()), ro: true };
   }
-  return { menu: state.menu, recipes: state.recipes, ro: false };
+  return { menu: state.menu, recipes: allRecipes(state.recipes), ro: false };
+}
+
+const RECENT_CHOICES = [0, 3, 7, 14, 30];
+function prefsData() {
+  const raw = role === "helper" ? sessionPayload()?.prefs || {} : { diet: state.settings.diet, recentBuyDays: state.settings.recentBuyDays };
+  const days = Number(raw.recentBuyDays);
+  return { diet: normalizeDiet(raw.diet), recentBuyDays: RECENT_CHOICES.includes(days) ? days : 7 };
 }
 
 function menuGo(name) {
   return role === "helper" ? `h-${name}` : name;
 }
 
-function dishLine(d, date, recipes, ro) {
+/* recipe display language: auto (follow app language), zh, en, or both */
+function recipeMode() {
+  const v = ui.recipeLang;
+  if (v === "zh" || v === "en" || v === "both") return v;
+  return getLang() === "en" ? "en" : "zh";
+}
+function biHtml(zh, en) {
+  const mode = recipeMode();
+  const z = escapeHtml(zh || "");
+  const e = escapeHtml(en || "");
+  if (mode === "both" && zh && en && zh !== en) return `<span class="bi-main">${z}</span><span class="bi-alt">${e}</span>`;
+  if (mode === "en") return e || z;
+  return z || e;
+}
+function recipeNameHtml(r) {
+  const mode = recipeMode();
+  if (mode === "both") return biHtml(r.nameZh || r.nameEn, r.nameEn);
+  return escapeHtml(recipeName(r, mode));
+}
+function ingLine(i) {
+  const mode = recipeMode();
+  if (mode === "both") {
+    const q = [i.qty, i.qtyEn && i.qtyEn !== i.qty ? i.qtyEn : ""].filter(Boolean).join(" / ");
+    return `<span class="ing-name">${biHtml(i.zh || i.en, i.en)}</span><span class="ing-qty">${escapeHtml(q)}</span>`;
+  }
+  return `<span class="ing-name">${escapeHtml(ingName(i, mode))}</span><span class="ing-qty">${escapeHtml(ingQty(i, mode))}</span>`;
+}
+function stepHtml(s) {
+  const mode = recipeMode();
+  if (mode === "both") return biHtml(s.zh || s.en, s.en);
+  return escapeHtml(stepText(s, mode));
+}
+function recipeLangSeg() {
+  const cur = recipeMode();
+  const opts = [["zh", "recipe.lang.zh"], ["en", "recipe.lang.en"], ["both", "recipe.lang.both"]];
+  return `<div class="seg" role="group" aria-label="${tr("recipe.lang.label")}">${opts
+    .map(([v, k]) => `<button type="button" class="seg-btn ${cur === v ? "is-on" : ""}" data-action="recipe-lang" data-v="${v}" aria-pressed="${cur === v}">${tr(k)}</button>`)
+    .join("")}</div>`;
+}
+
+function dietBadges(r) {
+  const out = [];
+  for (const k of ["pork", "beef", "alcohol", "fermented"]) if ((r.diet || []).includes(k)) out.push(`<em class="dtag d-${k}">${tr(`diet.${k}`)}</em>`);
+  if ((r.diet || []).includes("light")) out.push(`<em class="dtag d-light">${tr("diet.light")}</em>`);
+  if (isHalalFriendly(r)) out.push(`<em class="dtag d-halal">${tr("diet.halal")}</em>`);
+  return out.join("");
+}
+function conflictBadge(r) {
+  const c = dietConflicts(r, prefsData().diet);
+  if (!c.length) return "";
+  return `<span class="warn-badge">${icon("alert", { size: 13 })}${tr("diet.conflict")}：${c.map((k) => tr(`diet.c.${k}`)).join("、")}</span>`;
+}
+function recentTag(n) {
+  if (!n) return "";
+  return `<span class="recent-tag">${icon("clock", { size: 12 })}${n === 1 ? tr("menu.recent.1") : tr("menu.recent.n", { n })}</span>`;
+}
+function recipeMeta(r) {
+  const parts = [];
+  if (r.prepMins) parts.push(tr("recipe.mins", { n: r.prepMins }));
+  parts.push(tr(`recipe.diff.${r.difficulty}`));
+  if (r.servings) parts.push(tr("recipe.servingsShort", { v: r.servings }));
+  return parts.join(tr("log.sep"));
+}
+
+function dishLine(d, date, recipes, ro, menu) {
   const r = recipes.find((x) => x.id === d.recipeId);
   const label = dishLabel(d, recipes);
   const link = r
-    ? `<button class="recipe-chip" type="button" data-go="${menuGo("recipe")}" data-recipe="${escapeHtml(r.id)}">${icon("book", { size: 13 })}${tr("recipe.link")}</button>`
+    ? `<button class="recipe-chip" type="button" data-go="${menuGo("recipe")}" data-recipe="${escapeHtml(r.id)}">${icon("book", { size: 13 })}${recipeNoLabel(r)} ${tr("recipe.link")}</button>`
     : "";
+  const marks = `${recentTag(eatenDaysAgo(menu, dishKey(d), date))}${r ? conflictBadge(r) : ""}`;
   return `<div class="dish">
     <div class="dish-main">
       <span class="dish-name">${escapeHtml(label)}</span>${link}
+      ${marks ? `<div class="dish-marks">${marks}</div>` : ""}
       ${d.note ? `<div class="dish-note">${escapeHtml(d.note)}</div>` : ""}
     </div>
     ${ro ? "" : `<button class="btn secondary small" type="button" data-action="dish-edit" data-id="${escapeHtml(d.id)}" data-date="${date}">${tr("common.edit")}</button>`}
@@ -2820,6 +3184,89 @@ function weekStrip(menu) {
   </div>`;
 }
 
+function menuViewSeg() {
+  const v = ui.menuView === "week" ? "week" : "day";
+  return `<div class="seg" role="group" aria-label="${tr("menu.view.label")}">
+    <button type="button" class="seg-btn ${v === "day" ? "is-on" : ""}" data-action="menu-view" data-v="day" aria-pressed="${v === "day"}">${tr("menu.view.day")}</button>
+    <button type="button" class="seg-btn ${v === "week" ? "is-on" : ""}" data-action="menu-view" data-v="week" aria-pressed="${v === "week"}">${tr("menu.view.week")}</button>
+  </div>`;
+}
+
+const SLOT_NAMES = { breakfast: ["早餐", "Breakfast"], lunch: ["午餐", "Lunch"], dinner: ["晚餐", "Dinner"], snack: ["宵夜", "Late snack"] };
+function slotLabelIn(slot, lang) {
+  if (slot.name) return slot.name;
+  const n = SLOT_NAMES[slot.key];
+  if (n) return lang === "en" ? n[1] : n[0];
+  return lang === "en" ? "Meal" : "餐";
+}
+
+function dayShareText(menu, recipes, date, lang) {
+  const slots = dayDishes(menu, date).map(({ slot, dishes }) => ({
+    label: slotLabelIn(slot, lang),
+    dishes: dishes.map((d) => {
+      const r = recipes.find((x) => x.id === d.recipeId);
+      return { name: dishLabel(d, recipes, lang), no: r ? r.no : 0, note: d.note };
+    }),
+  }));
+  return menuShareText(lang === "en" ? formatDateIn(date, "en") : formatDateIn(date, "zh"), slots, lang);
+}
+function formatDateIn(iso, lang) {
+  const prev = getLang();
+  if (prev === lang) return formatDate(iso, { shortWeek: true });
+  const [y, m, d] = iso.split("-").map(Number);
+  const w = new Date(y, m - 1, d).getDay();
+  if (lang === "en") return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][w]}, ${d} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1]}`;
+  return `${m}月${d}日（${["日", "一", "二", "三", "四", "五", "六"][w]}）`;
+}
+
+function shareButtons(kind, id) {
+  return `<div class="share-row">
+    <span class="tiny muted">${tr("share.wa.label")}</span>
+    <button class="btn secondary small" type="button" data-action="share-wa" data-kind="${kind}" data-id="${escapeHtml(id)}" data-l="zh">${tr("share.wa.zh")}</button>
+    <button class="btn secondary small" type="button" data-action="share-wa" data-kind="${kind}" data-id="${escapeHtml(id)}" data-l="en">${tr("share.wa.en")}</button>
+    <button class="btn secondary small" type="button" data-action="share-copy" data-kind="${kind}" data-id="${escapeHtml(id)}" data-l="${getLang() === "en" ? "en" : "zh"}">${tr("share.copy")}</button>
+  </div>`;
+}
+
+function shareTextFor(kind, id, lang) {
+  const { menu, recipes } = menuData();
+  if (kind === "recipe") {
+    const r = recipes.find((x) => x.id === id);
+    return r ? recipeShareText(r, lang) : "";
+  }
+  return menu ? dayShareText(menu, recipes, id, lang) : "";
+}
+
+function weekBoard(menu, recipes, ro) {
+  const t = today();
+  const slots = menu.slots || [];
+  return `<div class="week-board">${weekDates(ui.menuDate)
+    .map((iso) => {
+      const rows = slots
+        .map((slot) => {
+          const dishes = (menu.days?.[iso] || {})[slot.id] || [];
+          if (!dishes.length) return "";
+          return `<div class="wk-slot"><span class="wk-slot-name">${escapeHtml(slotLabel(slot, tr))}</span><span class="wk-dishes">${dishes
+            .map((d) => {
+              const r = recipes.find((x) => x.id === d.recipeId);
+              const rec = eatenDaysAgo(menu, dishKey(d), iso);
+              const warn = r && dietConflicts(r, prefsData().diet).length;
+              return `<span class="wk-dish ${rec ? "is-repeat" : ""} ${warn ? "is-warn" : ""}" title="${rec ? escapeHtml(rec === 1 ? tr("menu.recent.1") : tr("menu.recent.n", { n: rec })) : ""}">${escapeHtml(dishLabel(d, recipes))}${rec ? icon("clock", { size: 11 }) : ""}${warn ? icon("alert", { size: 11 }) : ""}</span>`;
+            })
+            .join("")}</span></div>`;
+        })
+        .join("");
+      return `<article class="card wk-day ${iso === t ? "is-today" : ""}">
+        <button class="wk-head" type="button" data-action="menu-day-open" data-date="${iso}">
+          <strong>${formatDate(iso, { shortWeek: true })}</strong>${iso === t ? `<span class="tag brass">${tr("menu.today")}</span>` : ""}
+        </button>
+        ${rows || `<p class="muted tiny" style="margin:0.3rem 0 0">${tr("menu.empty")}</p>`}
+      </article>`;
+    })
+    .join("")}</div>
+    <p class="tiny muted" style="margin-top:0.6rem">${icon("clock", { size: 12 })} ${tr("menu.legend.recent")}　${icon("alert", { size: 12 })} ${tr("menu.legend.warn")}</p>`;
+}
+
 function viewMenu() {
   const { menu, recipes, ro } = menuData();
   const head = `
@@ -2830,9 +3277,11 @@ function viewMenu() {
   const sel = ui.menuDate;
   const slots = menu.slots || [];
   const t = today();
+  const weekMode = ui.menuView === "week";
   return `
     ${head}
     <div class="card" style="margin-top:0.9rem">
+      <div class="menu-toolbar">${menuViewSeg()}</div>
       ${weekStrip(menu)}
       <div class="menu-jump">
         <label class="field" style="margin:0"><span class="tiny muted">${tr("menu.pickDate")}</span>
@@ -2841,7 +3290,10 @@ function viewMenu() {
         <button class="btn secondary small" type="button" data-action="menu-today" ${sel === t ? "disabled" : ""}>${tr("menu.today")}</button>
       </div>
     </div>
-    <section class="section">
+    ${
+      weekMode
+        ? `<section class="section">${weekBoard(menu, recipes, ro)}</section>`
+        : `<section class="section">
       <div class="section-head"><h2>${formatDate(sel, { weekday: true })}${sel === t ? ` <span class="tag brass">${tr("menu.today")}</span>` : ""}</h2></div>
       ${slots
         .map((slot) => {
@@ -2851,15 +3303,22 @@ function viewMenu() {
               <strong>${escapeHtml(slotLabel(slot, tr))}</strong>
               ${ro ? "" : `<button class="btn secondary small" type="button" data-action="dish-new" data-slot="${escapeHtml(slot.id)}" data-date="${sel}">${icon("plus", { size: 14 })}${tr("menu.addDish")}</button>`}
             </div>
-            ${dishes.length ? dishes.map((d) => dishLine(d, sel, recipes, ro)).join("") : `<p class="muted tiny" style="margin:0.3rem 0 0">${tr("menu.empty")}</p>`}
+            ${dishes.length ? dishes.map((d) => dishLine(d, sel, recipes, ro, menu)).join("") : `<p class="muted tiny" style="margin:0.3rem 0 0">${tr("menu.empty")}</p>`}
           </div>`;
         })
         .join("")}
-      ${ro ? "" : `<div class="btn-row">
+      ${dayCount(menu, sel) ? `<div class="card">${shareButtons("day", sel)}</div>` : ""}
+    </section>`
+    }
+    ${
+      ro
+        ? ""
+        : `<div class="btn-row">
+        <button class="btn" type="button" data-action="gen-open">${icon("basket", { size: 16 })}${tr("menu.gen.open")}</button>
         <button class="btn secondary" type="button" data-action="copy-open">${tr("menu.copy")}</button>
         <button class="btn secondary" type="button" data-action="slots-open">${tr("menu.slots.manage")}</button>
-      </div>`}
-    </section>
+      </div>`
+    }
     ${disclaimer()}`;
 }
 
@@ -2887,71 +3346,195 @@ function menuHomeCard() {
   </section>`;
 }
 
+/* ----- recipe browser ----- */
+
 function recipeCards(list, ro) {
-  if (!list.length) return `<p class="muted" style="margin:0">${tr(ui.recipeQuery ? "recipe.search.none" : "recipe.none")}</p>`;
+  if (!list.length) return `<p class="muted" style="margin:0">${tr(ui.recipeQuery || ui.recipeCat !== "all" || ui.recipeDiet.length ? "recipe.search.none" : "recipe.none")}</p>`;
+  const { menu } = menuData();
+  const t = today();
   return `<div class="recipe-grid">${list
     .map(
       (r) => `<button class="recipe-card" type="button" data-go="${ro ? "h-recipe" : "recipe"}" data-recipe="${escapeHtml(r.id)}">
-        <span class="recipe-thumb">${r.photo ? `<img src="${r.photo}" alt="" loading="lazy">` : icon("utensils", { size: 26 })}</span>
-        <span class="recipe-meta"><strong>${escapeHtml(r.name)}</strong>
-          ${r.tags.length ? `<span class="recipe-tags">${r.tags.slice(0, 3).map((x) => `<em>${escapeHtml(x)}</em>`).join("")}</span>` : ""}
+        <span class="recipe-thumb">${r.photo ? `<img src="${r.photo}" alt="" loading="lazy">` : icon("utensils", { size: 26 })}<b class="recipe-no">#${r.no}</b>${r.builtin ? "" : `<i class="mine-dot" title="${tr("recipe.src.mine")}"></i>`}</span>
+        <span class="recipe-meta"><strong>${recipeNameHtml(r)}</strong>
+          <span class="recipe-sub">${escapeHtml(recipeMeta(r))}</span>
+          <span class="recipe-tags">${dietBadges(r)}${r.sourceUrl ? `<em class="dtag d-web">${tr("recipe.web.badge")}</em>` : ""}</span>
+          ${conflictBadge(r)}${menu ? recentTag(recipeEatenDaysAgo(menu, r.id, t)) : ""}
         </span>
       </button>`
     )
     .join("")}</div>`;
 }
 
+function webSearchBlock(count, ro) {
+  const q = String(ui.recipeQuery || "").trim();
+  if (!q || /^#?\d+$/.test(q) || count > 3) return "";
+  const u = webSearchUrls(q, getLang() === "en" ? "en" : "zh");
+  return `<div class="web-search">
+    <p class="tiny muted" style="margin:0 0 0.5rem">${tr(count ? "recipe.web.few" : "recipe.web.none")}</p>
+    <div class="btn-row" style="margin:0">
+      <a class="btn secondary small" href="${escapeHtml(u.google)}" target="_blank" rel="noopener noreferrer">${tr("recipe.web.google")}</a>
+      <a class="btn secondary small" href="${escapeHtml(u.youtube)}" target="_blank" rel="noopener noreferrer">${tr("recipe.web.youtube")}</a>
+      ${ro ? "" : `<button class="btn small" type="button" data-action="web-open-sheet" data-q="${escapeHtml(q)}">${icon("plus", { size: 14 })}${tr("recipe.web.add")}</button>`}
+    </div>
+    ${ro ? "" : `<p class="tiny muted" style="margin:0.5rem 0 0">${tr("recipe.web.afterHint")}</p>`}
+  </div>`;
+}
+
+function recipeListInner(ro) {
+  const list = filteredRecipes(menuData().recipes);
+  return `<div id="recipe-count" class="tiny muted" style="margin-bottom:0.5rem">${tr("recipe.count", { n: list.length })}</div>${recipeCards(list, ro)}${webSearchBlock(list.length, ro)}`;
+}
+
+function recipeMatches(r, q) {
+  if (/^#?\d+$/.test(q)) return r.no === Number(q.replace("#", ""));
+  const hay = [r.nameZh, r.nameEn, ...r.tags, ...r.ingredients.flatMap((i) => [i.zh, i.en]), tr(`recipe.cat.${r.category}`)].join(" ").toLowerCase();
+  return hay.includes(q);
+}
+
 function filteredRecipes(recipes) {
   const q = String(ui.recipeQuery || "").trim().toLowerCase();
-  const list = recipes.slice().sort((a, b) => a.name.localeCompare(b.name, getLang() === "en" ? "en" : "zh-Hant"));
-  if (!q) return list;
-  return list.filter((r) => [r.name, ...r.tags, ...r.ingredients].join(" ").toLowerCase().includes(q));
+  const diet = prefsData().diet;
+  const f = new Set(ui.recipeDiet);
+  const list = recipes
+    .filter((r) => {
+      if (ui.recipeCat !== "all" && r.category !== ui.recipeCat) return false;
+      if (ui.recipeSrc === "lib" && !r.builtin) return false;
+      if (ui.recipeSrc === "mine" && r.builtin) return false;
+      if (f.has("fits") && dietConflicts(r, diet).length) return false;
+      if (f.has("halal") && !isHalalFriendly(r)) return false;
+      if (f.has("light") && !(r.diet || []).includes("light")) return false;
+      if (f.has("nopork") && (r.diet || []).includes("pork")) return false;
+      if (f.has("nobeef") && (r.diet || []).includes("beef")) return false;
+      return !q || recipeMatches(r, q);
+    })
+    .slice();
+  return list.sort((a, b) => a.no - b.no);
+}
+
+function chip(action, v, label, on) {
+  return `<button class="chip small ${on ? "is-on" : ""}" type="button" data-action="${action}" data-v="${v}" aria-pressed="${on}">${label}</button>`;
+}
+
+function dietSummaryText(diet) {
+  const keys = [["noPork", "diet.pref.noPork"], ["noBeef", "diet.pref.noBeef"], ["noAlcohol", "diet.pref.noAlcohol"], ["noFermented", "diet.pref.noFermented"], ["halalOnly", "diet.pref.halalOnly"], ["lightOnly", "diet.pref.lightOnly"]];
+  const on = keys.filter(([k]) => diet[k]).map(([, key]) => tr(key));
+  return on.length ? on.join("、") : tr("diet.pref.none");
+}
+
+function dietPrefsCard(ro) {
+  const diet = prefsData().diet;
+  if (ro) {
+    return `<div class="card diet-card"><strong>${tr("diet.pref.title")}</strong><p class="tiny muted" style="margin:0.25rem 0 0">${escapeHtml(dietSummaryText(diet))}</p></div>`;
+  }
+  const rows = [["noPork", "diet.pref.noPork"], ["noBeef", "diet.pref.noBeef"], ["noAlcohol", "diet.pref.noAlcohol"], ["noFermented", "diet.pref.noFermented"], ["halalOnly", "diet.pref.halalOnly"], ["lightOnly", "diet.pref.lightOnly"]];
+  return `<details class="card diet-card" ${ui.dietOpen ? "open" : ""}>
+    <summary><strong>${tr("diet.pref.title")}</strong><span class="tiny muted"> ${escapeHtml(dietSummaryText(diet))}</span></summary>
+    <p class="tiny muted" style="margin:0.5rem 0">${tr("diet.pref.hint")}</p>
+    <div class="diet-grid">${rows
+      .map(([k, key]) => `<label class="check-row"><input type="checkbox" data-action="diet-toggle" data-key="${k}" ${diet[k] ? "checked" : ""}><span>${tr(key)}</span></label>`)
+      .join("")}</div>
+    <p class="tiny muted" style="margin:0.5rem 0 0">${tr("diet.halal.note")}</p>
+  </details>`;
 }
 
 function viewRecipes() {
   const { recipes, ro } = menuData();
+  const cats = ["all", ...CATEGORIES];
+  const srcs = [["all", "recipe.src.all"], ["lib", "recipe.src.lib"], ["mine", "recipe.src.mine"]];
+  const dfs = [["fits", "recipe.f.fits"], ["halal", "diet.halal"], ["light", "diet.light"], ["nopork", "recipe.f.nopork"], ["nobeef", "recipe.f.nobeef"]];
   return `
     <h1 class="screen-title">${tr("recipe.title")}</h1>
     <p class="lede">${tr(ro ? "recipe.helper.lede" : "recipe.lede")}</p>
     ${menuTabs("recipes")}
-    ${ro ? "" : `<div class="btn-row"><button class="btn" type="button" data-action="recipe-new">${icon("plus", { size: 16 })}${tr("recipe.new")}</button></div>`}
+    ${ro ? "" : `<div class="btn-row"><button class="btn" type="button" data-action="recipe-new">${icon("plus", { size: 16 })}${tr("recipe.new")}</button><button class="btn secondary" type="button" data-action="web-open-sheet" data-q="">${tr("recipe.web.add")}</button></div>`}
     <input class="search" type="search" data-recipe-search placeholder="${tr("recipe.search.ph")}" value="${escapeHtml(ui.recipeQuery || "")}" aria-label="${tr("recipe.search.ph")}" style="margin-top:0.9rem">
-    <div id="recipe-list" class="card" style="margin-top:0.9rem">${recipeCards(filteredRecipes(recipes), ro)}</div>
+    <div class="chip-row filter-row">${cats.map((c) => chip("recipe-cat", c, c === "all" ? tr("recipe.cat.all") : tr(`recipe.cat.${c}`), ui.recipeCat === c)).join("")}</div>
+    <div class="chip-row filter-row">${srcs.map(([v, k]) => chip("recipe-src", v, tr(k), ui.recipeSrc === v)).join("")}</div>
+    <div class="chip-row filter-row">${dfs.map(([v, k]) => chip("recipe-diet-f", v, tr(k), ui.recipeDiet.includes(v))).join("")}</div>
+    ${dietPrefsCard(ro)}
+    <div id="recipe-list" class="card" style="margin-top:0.9rem">${recipeListInner(ro)}</div>
     ${disclaimer()}`;
 }
 
 function viewRecipe() {
-  const { recipes, ro } = menuData();
+  const { menu, recipes, ro } = menuData();
   const r = recipes.find((x) => x.id === ui.recipeId);
   const back = `<button class="linkish" type="button" data-go="${menuGo("recipes")}">${icon("back", { size: 15 })} ${tr("recipe.back")}</button>`;
   if (!r) return `${back}<div class="card" style="margin-top:0.9rem"><p class="muted" style="margin:0">${tr("recipe.missing")}</p></div>`;
+  const tip = r.tips ? (recipeMode() === "both" ? biHtml(r.tips.zh, r.tips.en) : escapeHtml(tipsText(r, recipeMode()))) : "";
+  const eaten = menu ? recipeEatenDaysAgo(menu, r.id, today()) : 0;
   return `
     ${back}
-    <article class="recipe-detail">
-      ${r.photo ? `<img class="recipe-hero" src="${r.photo}" alt="${escapeHtml(r.name)}">` : ""}
-      <h1 class="screen-title" style="margin-top:0.7rem">${escapeHtml(r.name)}</h1>
-      ${r.servings ? `<p class="lede" style="margin:0 0 0.4rem">${tr("recipe.servingsLine", { v: escapeHtml(r.servings) })}</p>` : ""}
-      ${r.tags.length ? `<p class="recipe-tags" style="margin:0 0 0.6rem">${r.tags.map((x) => `<em>${escapeHtml(x)}</em>`).join("")}</p>` : ""}
-      ${
-        ro
-          ? ""
-          : `<div class="btn-row">
-              <button class="btn" type="button" data-action="recipe-menu" data-id="${escapeHtml(r.id)}">${tr("recipe.addMenu")}</button>
+    <article class="recipe-detail ${ro ? "is-helper" : ""}">
+      ${r.photo ? `<img class="recipe-hero" src="${r.photo}" alt="${escapeHtml(recipeName(r))}">` : ""}
+      <p class="recipe-id">${tr("recipe.id")} <b>#${r.no}</b>${r.builtin ? ` <span class="tag">${tr("recipe.src.lib")}</span>` : ""}</p>
+      <h1 class="screen-title" style="margin-top:0.3rem">${recipeNameHtml(r)}</h1>
+      <p class="lede" style="margin:0 0 0.4rem">${escapeHtml(recipeMeta(r))}${tr("log.sep")}${tr(`recipe.cat.${r.category}`)}</p>
+      <p class="recipe-tags" style="margin:0 0 0.6rem">${dietBadges(r)}${r.tags.map((x) => `<em>${escapeHtml(x)}</em>`).join("")}</p>
+      ${conflictBadge(r) ? `<p style="margin:0 0 0.6rem">${conflictBadge(r)}</p>` : ""}
+      ${eaten ? `<p style="margin:0 0 0.6rem">${recentTag(eaten)}</p>` : ""}
+      <div class="btn-row">
+        <button class="btn" type="button" data-action="cook-open" data-id="${escapeHtml(r.id)}">${icon("utensils", { size: 16 })}${tr("cook.open")}</button>
+        ${
+          ro
+            ? ""
+            : `<button class="btn secondary" type="button" data-action="recipe-menu" data-id="${escapeHtml(r.id)}">${tr("recipe.addMenu")}</button>
               <button class="btn secondary" type="button" data-action="recipe-shop-open" data-id="${escapeHtml(r.id)}">${icon("basket", { size: 16 })}${tr("recipe.addShop")}</button>
-              <button class="btn secondary" type="button" data-action="recipe-edit" data-id="${escapeHtml(r.id)}">${tr("common.edit")}</button>
-            </div>`
-      }
+              ${r.builtin ? `<button class="btn secondary" type="button" data-action="recipe-copy" data-id="${escapeHtml(r.id)}">${tr("recipe.copy")}</button>` : `<button class="btn secondary" type="button" data-action="recipe-edit" data-id="${escapeHtml(r.id)}">${tr("common.edit")}</button>`}`
+        }
+      </div>
+      ${r.sourceUrl ? `<p class="source-line"><a class="btn secondary small" href="${escapeHtml(r.sourceUrl)}" target="_blank" rel="noopener noreferrer">${icon("share", { size: 14 })}${tr("recipe.web.original")}</a> <span class="tiny muted">${escapeHtml(urlHost(r.sourceUrl))}</span></p>` : ""}
+      <div class="card" style="margin-top:0.9rem">${shareButtons("recipe", r.id)}${recipeLangSeg()}</div>
       <div class="card" style="margin-top:0.9rem">
         <h2 class="mini-title">${tr("recipe.ingredients")}</h2>
-        ${r.ingredients.length ? `<ul class="ing-list">${r.ingredients.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>` : `<p class="muted" style="margin:0">—</p>`}
+        ${r.ingredients.length ? `<ul class="ing-list">${r.ingredients.map((x) => `<li>${ingLine(x)}</li>`).join("")}</ul>` : `<p class="muted" style="margin:0">—</p>`}
       </div>
       <div class="card" style="margin-top:0.9rem">
         <h2 class="mini-title">${tr("recipe.steps")}</h2>
-        ${r.steps.length ? `<ol class="step-list">${r.steps.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ol>` : `<p class="muted" style="margin:0">—</p>`}
+        ${r.steps.length ? `<ol class="step-list">${r.steps.map((x) => `<li>${stepHtml(x)}</li>`).join("")}</ol>` : `<p class="muted" style="margin:0">—</p>`}
       </div>
-      ${r.notes ? `<div class="card" style="margin-top:0.9rem"><h2 class="mini-title">${tr("common.note")}</h2><p style="margin:0;white-space:pre-wrap">${escapeHtml(r.notes)}</p></div>` : ""}
+      ${tip ? `<div class="card" style="margin-top:0.9rem"><h2 class="mini-title">${tr("recipe.tips")}</h2><p style="margin:0;white-space:pre-wrap">${tip}</p></div>` : ""}
     </article>
     ${disclaimer()}`;
+}
+
+/* ----- cook mode (large font, one step at a time) ----- */
+
+function viewCook() {
+  const { recipes } = menuData();
+  const r = recipes.find((x) => x.id === ui.recipeId);
+  const back = `<button class="linkish" type="button" data-go="${menuGo("recipe")}" data-recipe="${escapeHtml(ui.recipeId || "")}">${icon("back", { size: 15 })} ${tr("cook.exit")}</button>`;
+  if (!r) return `${back}<div class="card" style="margin-top:0.9rem"><p class="muted" style="margin:0">${tr("recipe.missing")}</p></div>`;
+  const total = r.steps.length;
+  const step = Math.max(0, Math.min(total, Number(ui.cookStep) || 0));
+  const ticks = ui.cookTicks[r.id] || [];
+  const pct = total ? Math.round((step / total) * 100) : 100;
+  let body;
+  if (step === 0) {
+    body = `<h2 class="cook-h">${tr("cook.ingredients")}</h2>
+      <ul class="cook-ing">${r.ingredients
+        .map((i, n) => `<li><label class="cook-check"><input type="checkbox" data-action="cook-tick" data-rid="${escapeHtml(r.id)}" data-i="${n}" ${ticks.includes(n) ? "checked" : ""}><span>${ingLine(i)}</span></label></li>`)
+        .join("")}</ul>`;
+  } else {
+    const tip = step === total ? (recipeMode() === "both" ? biHtml(r.tips?.zh, r.tips?.en) : escapeHtml(tipsText(r, recipeMode()))) : "";
+    body = `<div class="cook-stepno">${tr("cook.step", { n: step, total })}</div>
+      <p class="cook-text">${stepHtml(r.steps[step - 1])}</p>
+      ${tip ? `<div class="cook-tip"><b>${tr("recipe.tips")}</b> ${tip}</div>` : ""}`;
+  }
+  return `
+    ${back}
+    <article class="cook">
+      <p class="recipe-id">${tr("recipe.id")} <b>#${r.no}</b></p>
+      <h1 class="cook-title">${recipeNameHtml(r)}</h1>
+      ${recipeLangSeg()}
+      <div class="cook-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${step}"><b style="width:${pct}%"></b></div>
+      <div class="card cook-body">${body}</div>
+      <div class="cook-nav">
+        <button class="btn secondary cook-btn" type="button" data-action="cook-prev" ${step === 0 ? "disabled" : ""}>${tr("cook.prev")}</button>
+        ${step >= total ? `<button class="btn cook-btn" type="button" data-action="cook-done" data-id="${escapeHtml(r.id)}">${tr("cook.done")}</button>` : `<button class="btn cook-btn" type="button" data-action="cook-next">${tr(step === 0 ? "cook.start" : "cook.next")}</button>`}
+      </div>
+    </article>`;
 }
 
 function dishNameOptions() {
@@ -2964,6 +3547,106 @@ function dishNameOptions() {
     .map((n) => `<option value="${escapeHtml(n)}"></option>`)
     .join("");
 }
+
+function recipeOptions(selectedId) {
+  const mine = state.recipes;
+  const lib = allRecipes([]).slice();
+  const opt = (r) => `<option value="${escapeHtml(r.id)}" ${r.id === selectedId ? "selected" : ""}>#${r.no} ${escapeHtml(recipeName(r))}</option>`;
+  return `${mine.length ? `<optgroup label="${tr("recipe.src.mine")}">${mine.map(opt).join("")}</optgroup>` : ""}<optgroup label="${tr("recipe.src.lib")}">${lib.map(opt).join("")}</optgroup>`;
+}
+
+function dishHintHtml(recipeId, date) {
+  const r = allRecipes(state.recipes).find((x) => x.id === recipeId);
+  if (!r) return "";
+  const n = eatenDaysAgo(state.menu, `r:${r.id}`, date);
+  return `${conflictBadge(r)}${recentTag(n)}`;
+}
+
+/* ----- ingredients -> shopping list ----- */
+
+function recipeEntries(recipe, group = "") {
+  const dish = { key: recipe.id, no: recipe.no, name: recipeName(recipe) };
+  return recipe.ingredients.map((ing) => ({ ing, dish, group }));
+}
+
+function itemFromAgg(row, listId, helperId) {
+  const L = getLang() === "en" ? "en" : "zh";
+  const name = (L === "en" ? row.en || row.zh : row.zh || row.en) || "";
+  const alt = L === "en" ? (row.en ? row.zh : "") : row.en || "";
+  const qty = L === "en" ? row.qtyEn || row.qty : row.qty || row.qtyEn;
+  const dishes = row.dishes.map((d) => `#${d.no} ${d.name}`).join("、");
+  const cat = findCatalog(state, name);
+  return newShopItem({
+    listId,
+    helperId,
+    name,
+    alt: alt && alt !== name ? alt : "",
+    qty,
+    note: dishes ? tr("shop.forDishes", { dishes }) : "",
+    group: row.group || "",
+    suggestedPrice: cat ? cat.lastPrice : null,
+  });
+}
+
+/** Add merged ingredients of the given recipes to a list. Returns { added, skipped, recent }. */
+function addAggToList(list, rows) {
+  const h = state.helpers.find((x) => x.id === list.helperId) || helper();
+  const have = new Set(state.shopItems.filter((i) => i.listId === list.id).map((i) => `${i.group || ""}|${catalogKey(i.name)}`));
+  let added = 0;
+  let skipped = 0;
+  const fresh = [];
+  for (const row of rows) {
+    const it = itemFromAgg(row, list.id, h.id);
+    if (!it.name) continue;
+    const k = `${it.group || ""}|${catalogKey(it.name)}`;
+    if (have.has(k)) {
+      skipped += 1;
+      continue;
+    }
+    have.add(k);
+    state.shopItems.push(it);
+    fresh.push(it);
+    added += 1;
+  }
+  const ctx = { items: state.shopItems, lists: state.shopLists };
+  const recent = fresh.filter((it) => recentBuyFor(it, ctx)).length;
+  return { added, skipped, recent };
+}
+
+function addRecipesToList(list, ids) {
+  const recs = allRecipes(state.recipes);
+  const entries = [];
+  for (const id of ids) {
+    const r = recs.find((x) => x.id === id);
+    if (r) entries.push(...recipeEntries(r));
+  }
+  return addAggToList(list, aggregateIngredients(entries));
+}
+
+function addResultToast(res, list) {
+  let msg = res.skipped ? tr("recipe.shop.addedSkip", { n: res.added, s: res.skipped, list: list.title }) : tr("recipe.shop.added", { n: res.added, list: list.title });
+  if (res.recent) msg += tr("shop.recent.toast", { n: res.recent });
+  toast(msg);
+}
+
+function recipePickerHtml() {
+  const recs = allRecipes(state.recipes).slice().sort((a, b) => (a.builtin === b.builtin ? a.no - b.no : a.builtin ? 1 : -1));
+  return `<div class="field recipe-picker">
+    <span>${tr("shop.pick.title")}<span class="hint">${tr("shop.pick.hint")}</span></span>
+    <input class="search" type="search" data-pick-search placeholder="${tr("shop.pick.search")}" aria-label="${tr("shop.pick.search")}">
+    <div class="pick-list">${recs
+      .map(
+        (r) => `<label class="pick-row" data-pick-text="${escapeHtml([r.no, r.nameZh, r.nameEn].join(" ").toLowerCase())}">
+          <input type="checkbox" name="rpick" value="${escapeHtml(r.id)}">
+          <span><b>#${r.no}</b> ${escapeHtml(recipeName(r))}${recipeNameOther(r) ? `<small>${escapeHtml(recipeNameOther(r))}</small>` : ""}${r.builtin ? "" : `<em class="mine-tag">${tr("recipe.src.mine")}</em>`}</span>
+        </label>`
+      )
+      .join("")}</div>
+    <p class="tiny muted pick-count" data-pick-count>${tr("shop.pick.count", { n: 0 })}</p>
+  </div>`;
+}
+
+/* ----- sheets ----- */
 
 function menuSheetBody(sheet) {
   if (sheet.type === "dish") {
@@ -2981,7 +3664,7 @@ function menuSheetBody(sheet) {
       }
     }
     const d = dish || newDish({ recipeId: sheet.recipeId || "" });
-    const text = dish ? d.text : d.recipeId ? dishLabel(d, state.recipes) : "";
+    const text = dish ? d.text : d.recipeId ? dishLabel(d, allRecipes(state.recipes)) : "";
     return `
       <h2>${sheet.id ? tr("menu.dish.edit") : tr("menu.dish.add")}${tr("log.sep")}${formatDate(sheet.date, { shortWeek: true })}</h2>
       <form id="dish-form" data-date="${escapeHtml(sheet.date)}" data-id="${escapeHtml(sheet.id || "")}">
@@ -2995,9 +3678,10 @@ function menuSheetBody(sheet) {
         <label class="field"><span>${tr("menu.dish.recipe")}</span>
           <select name="recipeId">
             <option value="">${tr("menu.dish.recipe.none")}</option>
-            ${state.recipes.map((r) => `<option value="${escapeHtml(r.id)}" ${d.recipeId === r.id ? "selected" : ""}>${escapeHtml(r.name)}</option>`).join("")}
+            ${recipeOptions(d.recipeId)}
           </select>
         </label>
+        <div class="dish-hint" data-dish-hint>${dishHintHtml(d.recipeId, sheet.date)}</div>
         <label class="field"><span>${tr("common.note")}</span><input name="note" maxlength="120" value="${escapeHtml(d.note || "")}" placeholder="${tr("menu.dish.note.ph")}"></label>
         <div class="btn-row">
           <button class="btn" type="submit">${tr("common.save")}</button>
@@ -3040,12 +3724,28 @@ function menuSheetBody(sheet) {
       <div class="btn-row"><button class="btn" type="button" data-action="slots-done">${tr("menu.slots.done")}</button></div>`;
   }
   if (sheet.type === "recipe") {
-    const r = sheet.id ? state.recipes.find((x) => x.id === sheet.id) : newRecipe();
+    const r = sheet.id ? state.recipes.find((x) => x.id === sheet.id) : sheet.draft && ui.recipeDraft ? ui.recipeDraft : newRecipe();
     if (!r) return "";
+    const ingZh = r.ingredients.map((i) => `${i.zh} ${i.qty}`.trim()).join("\n");
+    const ingEn = r.ingredients.map((i) => `${i.en} ${i.qtyEn}`.trim()).join("\n");
     return `
-      <h2>${sheet.id ? tr("recipe.edit") : tr("recipe.new")}</h2>
+      <h2>${sheet.id ? tr("recipe.edit") : tr("recipe.new")}${r.no ? ` <small class="muted">#${r.no}</small>` : ""}</h2>
       <form id="recipe-form" data-id="${escapeHtml(r.id)}">
-        <label class="field"><span>${tr("recipe.f.name")}</span><input name="name" required maxlength="80" value="${escapeHtml(r.name)}" placeholder="${tr("recipe.f.name.ph")}"></label>
+        <label class="field"><span>${tr("recipe.f.nameZh")}</span><input name="nameZh" maxlength="80" value="${escapeHtml(r.nameZh)}" placeholder="${tr("recipe.f.name.ph")}"></label>
+        <label class="field"><span>${tr("recipe.f.nameEn")}</span><input name="nameEn" maxlength="80" value="${escapeHtml(r.nameEn)}" placeholder="${tr("recipe.f.nameEn.ph")}"></label>
+        <p class="tiny muted" style="margin:-0.3rem 0 0.7rem">${tr("recipe.f.langHint")}</p>
+        <div class="field-row">
+          <label class="field"><span>${tr("recipe.f.category")}</span>
+            <select name="category">${CATEGORIES.map((c) => `<option value="${c}" ${r.category === c ? "selected" : ""}>${tr(`recipe.cat.${c}`)}</option>`).join("")}</select>
+          </label>
+          <label class="field"><span>${tr("recipe.f.difficulty")}</span>
+            <select name="difficulty">${DIFFICULTIES.map((c) => `<option value="${c}" ${r.difficulty === c ? "selected" : ""}>${tr(`recipe.diff.${c}`)}</option>`).join("")}</select>
+          </label>
+        </div>
+        <div class="field-row">
+          <label class="field"><span>${tr("recipe.f.prep")}</span><input name="prepMins" type="number" inputmode="numeric" min="0" max="1440" value="${r.prepMins || ""}" placeholder="20"></label>
+          <label class="field"><span>${tr("recipe.f.servings")}</span><input name="servings" maxlength="20" value="${escapeHtml(r.servings)}" placeholder="${tr("recipe.f.servings.ph")}"></label>
+        </div>
         <div class="field">
           <span>${tr("recipe.f.photo")}</span>
           <div class="photo-row">
@@ -3056,45 +3756,108 @@ function menuSheetBody(sheet) {
           </div>
           <input type="file" accept="image/*" data-role="recipe-photo-input" hidden>
         </div>
-        <label class="field"><span>${tr("recipe.f.servings")}</span><input name="servings" maxlength="20" value="${escapeHtml(r.servings)}" placeholder="${tr("recipe.f.servings.ph")}"></label>
-        <label class="field"><span>${tr("recipe.f.ingredients")}</span><textarea name="ingredients" rows="6" placeholder="${tr("recipe.f.ingredients.ph")}">${escapeHtml(r.ingredients.join("\n"))}</textarea></label>
-        <label class="field"><span>${tr("recipe.f.steps")}</span><textarea name="steps" rows="6" placeholder="${tr("recipe.f.steps.ph")}">${escapeHtml(r.steps.join("\n"))}</textarea></label>
+        <label class="field"><span>${tr("recipe.f.ingZh")}</span><textarea name="ingZh" rows="6" placeholder="${tr("recipe.f.ingZh.ph")}">${escapeHtml(ingZh)}</textarea></label>
+        <label class="field"><span>${tr("recipe.f.ingEn")}</span><textarea name="ingEn" rows="6" placeholder="${tr("recipe.f.ingEn.ph")}">${escapeHtml(ingEn)}</textarea></label>
+        <label class="field"><span>${tr("recipe.f.stepsZh")}</span><textarea name="stepsZh" rows="6" placeholder="${tr("recipe.f.steps.ph")}">${escapeHtml(r.steps.map((s) => s.zh).join("\n"))}</textarea></label>
+        <label class="field"><span>${tr("recipe.f.stepsEn")}</span><textarea name="stepsEn" rows="6" placeholder="${tr("recipe.f.stepsEn.ph")}">${escapeHtml(r.steps.map((s) => s.en).join("\n"))}</textarea></label>
+        <label class="field"><span>${tr("recipe.f.tipsZh")}</span><textarea name="tipsZh" rows="2" maxlength="800">${escapeHtml(r.tips.zh)}</textarea></label>
+        <label class="field"><span>${tr("recipe.f.tipsEn")}</span><textarea name="tipsEn" rows="2" maxlength="800">${escapeHtml(r.tips.en)}</textarea></label>
+        <fieldset class="field">
+          <legend class="lbl">${tr("recipe.f.diet")}</legend>
+          <div class="diet-grid">${DIET_KEYS.map((k) => `<label class="check-row"><input type="checkbox" name="diet" value="${k}" ${(r.diet || []).includes(k) ? "checked" : ""}><span>${tr(`diet.${k}`)}</span></label>`).join("")}</div>
+          <p class="tiny muted" style="margin:0.4rem 0 0">${tr("diet.halal.note")}</p>
+        </fieldset>
         <label class="field"><span>${tr("recipe.f.tags")}</span><input name="tags" maxlength="120" value="${escapeHtml(r.tags.join(", "))}" placeholder="${tr("recipe.f.tags.ph")}"></label>
-        <label class="field"><span>${tr("common.note")}</span><textarea name="notes" rows="3" maxlength="800">${escapeHtml(r.notes)}</textarea></label>
+        <label class="field"><span>${tr("recipe.f.source")}</span><input name="sourceUrl" type="text" inputmode="url" autocapitalize="none" autocomplete="off" spellcheck="false" maxlength="600" value="${escapeHtml(r.sourceUrl || "")}" placeholder="https://"></label>
         <div class="btn-row">
           <button class="btn" type="submit">${tr("common.save")}</button>
           ${sheet.id ? `<button class="btn danger" type="button" data-action="recipe-del" data-id="${escapeHtml(r.id)}">${tr("common.delete")}</button>` : ""}
         </div>
       </form>`;
   }
+  if (sheet.type === "web-recipe") {
+    const d = sheet.prefill || {};
+    return `
+      <h2>${tr("recipe.web.sheetTitle")}</h2>
+      <p class="tiny muted" style="margin-bottom:0.8rem">${tr("recipe.web.hint")}</p>
+      <form id="web-recipe-form">
+        <label class="field"><span>${tr("recipe.web.url")}</span><input name="sourceUrl" type="text" inputmode="url" autocapitalize="none" autocomplete="off" spellcheck="false" required maxlength="600" value="${escapeHtml(d.url || "")}" placeholder="https://"></label>
+        <label class="field"><span>${tr("recipe.web.name")}</span><input name="name" maxlength="80" value="${escapeHtml(d.name || "")}" placeholder="${tr("recipe.f.name.ph")}"></label>
+        <label class="field"><span>${tr("recipe.web.paste")}</span><textarea name="paste" rows="8" maxlength="12000" placeholder="${tr("recipe.web.paste.ph")}">${escapeHtml(d.text || "")}</textarea></label>
+        <div class="btn-row">
+          <button class="btn" type="submit">${tr("recipe.web.parse")}</button>
+          <button class="btn secondary" type="button" data-action="web-open-link">${tr("recipe.web.openLink")}</button>
+        </div>
+      </form>`;
+  }
   if (sheet.type === "recipe-shop") {
-    const r = state.recipes.find((x) => x.id === sheet.id);
+    const r = allRecipes(state.recipes).find((x) => x.id === sheet.id);
     const h = helper();
     if (!r || !h) return `<h2>${tr("recipe.shop.title")}</h2><p class="muted">${tr("toast.addHelperFirst")}</p>`;
     const open = listsFor(h)
       .filter((l) => l.status !== "done")
       .sort((a, b) => listDate(b).localeCompare(listDate(a)));
     const preferred = open.find((l) => listDate(l) === today()) || null;
+    const nm = recipeName(r);
     return `
-      <h2>${tr("recipe.shop.title")}${tr("log.sep")}${escapeHtml(r.name)}</h2>
+      <h2>${tr("recipe.shop.title")}${tr("log.sep")}${escapeHtml(nm)}</h2>
       ${
         r.ingredients.length
           ? `<form id="recipe-shop-form" data-id="${escapeHtml(r.id)}">
         <label class="field"><span>${tr("recipe.shop.pick")}</span>
           <select name="list">
-            <option value="new" ${preferred ? "" : "selected"}>${tr("recipe.shop.new", { name: escapeHtml(r.name) })}</option>
+            <option value="new" ${preferred ? "" : "selected"}>${tr("recipe.shop.new", { name: escapeHtml(nm) })}</option>
             ${open.map((l) => `<option value="${escapeHtml(l.id)}" ${preferred && preferred.id === l.id ? "selected" : ""}>${escapeHtml(l.title)}${tr("log.sep")}${formatDate(listDate(l), { short: true })}</option>`).join("")}
           </select>
         </label>
         <div class="field"><span>${tr("recipe.shop.items")}</span>
           <div class="ing-pick">${r.ingredients
-            .map((x, i) => `<label class="check-row"><input type="checkbox" name="ing" value="${i}" checked><span>${escapeHtml(x)}</span></label>`)
+            .map((x, i) => `<label class="check-row"><input type="checkbox" name="ing" value="${i}" checked><span>${escapeHtml(ingName(x))}${ingQty(x) ? tr("log.sep") + escapeHtml(ingQty(x)) : ""}</span></label>`)
             .join("")}</div>
         </div>
         <div class="btn-row"><button class="btn" type="submit">${tr("recipe.shop.go")}</button></div>
       </form>`
           : `<p class="muted">${tr("recipe.shop.none")}</p>`
       }`;
+  }
+  if (sheet.type === "gen-shop") {
+    const { menu } = menuData();
+    const days = weekDates(ui.menuDate);
+    const t = today();
+    const withDishes = days.filter((d) => dayCount(menu, d));
+    const defaults = withDishes.filter((d) => d >= t).length ? withDishes.filter((d) => d >= t) : withDishes;
+    const h = helper();
+    if (!h) return `<h2>${tr("menu.gen.title")}</h2><p class="muted">${tr("toast.addHelperFirst")}</p>`;
+    return `
+      <h2>${tr("menu.gen.title")}</h2>
+      <p class="tiny muted" style="margin-bottom:0.8rem">${tr("menu.gen.hint")}</p>
+      <form id="gen-form">
+        <div class="field"><span>${tr("menu.gen.days")}</span>
+          <div class="ing-pick">${days
+            .map((d) => {
+              const rn = menu.slots.reduce((n, s) => n + ((menu.days[d] || {})[s.id] || []).filter((x) => x.recipeId).length, 0);
+              return `<label class="check-row"><input type="checkbox" name="gday" value="${d}" ${defaults.includes(d) ? "checked" : ""} ${dayCount(menu, d) ? "" : "disabled"}><span>${formatDate(d, { shortWeek: true })}${tr("log.sep")}${tr("menu.gen.dishCount", { n: dayCount(menu, d), r: rn })}</span></label>`;
+            })
+            .join("")}</div>
+        </div>
+        <label class="field"><span>${tr("sheet.list.name")}</span><input name="title" required maxlength="80" value="${escapeHtml(tr("menu.gen.defaultTitle", { from: formatDate(days[0], { short: true }), to: formatDate(days[6], { short: true }) }))}"></label>
+        <label class="field"><span>${tr("shop.date")}</span><input type="date" name="date" required value="${escapeHtml(t)}"></label>
+        <label class="switch-field">
+          <span><strong>${tr("menu.gen.group")}</strong><span class="hint">${tr("menu.gen.group.hint")}</span></span>
+          <span class="switch"><input type="checkbox" name="group" checked><span></span></span>
+        </label>
+        <div class="btn-row"><button class="btn" type="submit">${tr("menu.gen.go")}</button></div>
+      </form>`;
+  }
+  if (sheet.type === "list-recipes") {
+    const list = state.shopLists.find((l) => l.id === sheet.listId);
+    if (!list) return "";
+    return `
+      <h2>${tr("shop.pick.sheetTitle")}${tr("log.sep")}${escapeHtml(list.title || "")}</h2>
+      <form id="list-recipes-form" data-list="${escapeHtml(list.id)}">
+        ${recipePickerHtml()}
+        <div class="btn-row"><button class="btn" type="submit">${tr("shop.pick.add")}</button></div>
+      </form>`;
   }
   return "";
 }
@@ -3198,7 +3961,7 @@ function sheetHtml() {
     const row = rows.find((c) => c.key === sheet.key);
     body = `<h2>${tr("shop.hist.title")}${row ? tr("log.sep") + escapeHtml(row.name) : ""}</h2>${priceHistoryHtml(row, role === "helper" ? "session" : "stored")}
       <div class="btn-row"><button class="btn secondary" type="button" data-action="sheet-close">${tr("common.close")}</button></div>`;
-  } else if (["dish", "copy-day", "slots", "recipe", "recipe-shop"].includes(sheet.type)) {
+  } else if (["dish", "copy-day", "slots", "recipe", "recipe-shop", "gen-shop", "list-recipes", "web-recipe"].includes(sheet.type)) {
     body = menuSheetBody(sheet);
   } else if (sheet.type === "consent") {
     body = consentSheetBody(sheet);
@@ -3261,6 +4024,7 @@ function sheetHtml() {
           </select>
         </label>
         <label class="field"><span>${tr("common.note")}</span><textarea name="note" maxlength="500"></textarea></label>
+        ${recipePickerHtml()}
         <div class="btn-row"><button class="btn" type="submit">${tr("sheet.list.create")}</button></div>
       </form>
     `;
@@ -3276,6 +4040,7 @@ function sheetHtml() {
           <datalist id="catalog-names">${catalogNameOptions()}</datalist>
         </label>
         <div data-suggest-wrap>${itemHintBlock(cat)}</div>
+        <div data-recent-wrap>${itemRecentHint(item.name, item.id, item.listId)}</div>
         <label class="field"><span>${tr("sheet.item.qty")}</span><input name="qty" maxlength="40" value="${escapeHtml(item.qty || "")}" placeholder="${tr("sheet.item.qty.ph")}"></label>
         <label class="field"><span>${tr("common.note")}</span><textarea name="note" maxlength="400">${escapeHtml(item.note || "")}</textarea></label>
         <div class="field">
@@ -3333,6 +4098,8 @@ function mainContent() {
         return viewRecipes();
       case "h-recipe":
         return viewRecipe();
+      case "h-cook":
+        return viewCook();
       case "h-pay":
         return viewHelperPay();
       case "h-remind":
@@ -3370,6 +4137,8 @@ function mainContent() {
       return viewRecipes();
     case "recipe":
       return viewRecipe();
+    case "cook":
+      return viewCook();
     case "share":
       return viewShare();
     case "more":
@@ -3515,7 +4284,16 @@ function bindAfterRender() {
     rs.addEventListener("input", () => {
       ui.recipeQuery = rs.value;
       const box = document.getElementById("recipe-list");
-      if (box) box.innerHTML = recipeCards(filteredRecipes(menuData().recipes), role === "helper");
+      if (box) box.innerHTML = recipeListInner(role === "helper");
+    });
+  }
+  const ps = document.querySelector("[data-pick-search]");
+  if (ps) {
+    ps.addEventListener("input", () => {
+      const q = ps.value.trim().toLowerCase().replace(/^#/, "");
+      document.querySelectorAll(".pick-row").forEach((row) => {
+        row.hidden = Boolean(q) && !String(row.getAttribute("data-pick-text") || "").includes(q);
+      });
     });
   }
   const nameInput = document.querySelector("#shop-item-form [name=name]");
@@ -3524,9 +4302,12 @@ function bindAfterRender() {
     const wrap = document.querySelector("[data-suggest-wrap]");
     const itemId = document.getElementById("shop-item-form")?.getAttribute("data-id") || "";
     const existing = state.shopItems.find((i) => i.id === itemId);
+    const recentWrap = document.querySelector("[data-recent-wrap]");
+    const listIdForHint = document.getElementById("shop-item-form")?.getAttribute("data-list") || "";
     const update = () => {
       const cat = findCatalog(state, nameInput.value);
       if (wrap) wrap.innerHTML = itemHintBlock(cat);
+      if (recentWrap) recentWrap.innerHTML = itemRecentHint(nameInput.value, itemId, listIdForHint);
       if (!price) return;
       if (cat && (price.value === "" || price.dataset.autofilled === "1")) {
         price.value = String(cat.lastPrice);
@@ -3579,6 +4360,19 @@ function collectHelperForm(form) {
     winterChoice: helper()?.winterChoice || "christmas",
     grantGeneralHolidays: helper()?.grantGeneralHolidays || false,
   });
+}
+
+/** After ticking an item: update row state and the card's 3/8 progress without a full re-render. */
+function refreshShopDom(el) {
+  el.closest("[data-item-row]")?.classList.toggle("is-bought", el.checked);
+  const card = el.closest("[data-shop-card]");
+  if (!card) return;
+  const total = Number(card.dataset.total) || 0;
+  const done = (Number(card.dataset.hiddenDone) || 0) + card.querySelectorAll("input[data-tick]:checked").length;
+  const prog = card.querySelector("[data-prog]");
+  if (prog) prog.textContent = tr("shop.card.progress", { done, total });
+  const bar = card.querySelector("[data-prog-bar]");
+  if (bar) bar.style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
 }
 
 function persistSessionPayload() {
@@ -3885,6 +4679,134 @@ async function onClick(ev) {
     state.reminderState[id] = { ...(state.reminderState[id] || {}), done: true };
     save();
     render();
+    return;
+  }
+  if (action === "menu-view") {
+    ui.menuView = act.getAttribute("data-v") === "week" ? "week" : "day";
+    render();
+    return;
+  }
+  if (action === "menu-day-open") {
+    ui.menuDate = act.getAttribute("data-date");
+    ui.menuView = "day";
+    render();
+    return;
+  }
+  if (action === "recipe-lang") {
+    ui.recipeLang = act.getAttribute("data-v");
+    render();
+    return;
+  }
+  if (action === "recipe-cat") {
+    ui.recipeCat = act.getAttribute("data-v");
+    render();
+    return;
+  }
+  if (action === "recipe-src") {
+    ui.recipeSrc = act.getAttribute("data-v");
+    render();
+    return;
+  }
+  if (action === "recipe-diet-f") {
+    const v = act.getAttribute("data-v");
+    ui.recipeDiet = ui.recipeDiet.includes(v) ? ui.recipeDiet.filter((x) => x !== v) : [...ui.recipeDiet, v];
+    render();
+    return;
+  }
+  if (action === "cook-open") {
+    ui.recipeId = id;
+    ui.cookStep = 0;
+    try {
+      navigator.wakeLock?.request?.("screen")?.catch(() => {});
+    } catch {
+      /* optional */
+    }
+    setTab(menuGo("cook"));
+    return;
+  }
+  if (action === "cook-prev" || action === "cook-next") {
+    ui.cookStep = Math.max(0, (Number(ui.cookStep) || 0) + (action === "cook-next" ? 1 : -1));
+    render();
+    window.scrollTo?.(0, 0);
+    document.querySelector(".main")?.scrollTo?.(0, 0);
+    return;
+  }
+  if (action === "cook-done") {
+    ui.cookStep = 0;
+    ui.recipeId = id;
+    setTab(menuGo("recipe"));
+    return;
+  }
+  if (action === "share-wa" || action === "share-copy") {
+    const text = shareTextFor(act.getAttribute("data-kind"), id, act.getAttribute("data-l") === "en" ? "en" : "zh");
+    if (!text) return;
+    if (action === "share-wa") {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+      return;
+    }
+    if (navigator.share) {
+      navigator.share({ text }).catch(() => {});
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(tr("share.copied"));
+    } catch {
+      toast(tr("share.copyFailed"));
+    }
+    return;
+  }
+  if (role !== "helper" && action === "web-open-sheet") {
+    ui.sheet = { type: "web-recipe", prefill: { name: act.getAttribute("data-q") || "" } };
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "web-open-link") {
+    const raw = document.querySelector("#web-recipe-form [name=sourceUrl]")?.value || "";
+    const url = normalizeSourceUrl(raw);
+    if (!url) return toast(tr("recipe.web.badUrl"));
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  if (role !== "helper" && action === "gen-open") {
+    ui.sheet = { type: "gen-shop" };
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "list-recipes-open") {
+    ui.sheet = { type: "list-recipes", listId: act.getAttribute("data-list") };
+    render();
+    return;
+  }
+  if (role !== "helper" && action === "recipe-copy") {
+    const src = allRecipes(state.recipes).find((x) => x.id === id);
+    if (!src) return;
+    const copy = newRecipe({
+      nameZh: src.nameZh,
+      nameEn: src.nameEn,
+      name: src.nameZh || src.nameEn,
+      no: nextRecipeNo(state.recipes),
+      category: src.category,
+      prepMins: src.prepMins,
+      difficulty: src.difficulty,
+      servings: src.servings,
+      ingredients: src.ingredients.map((i) => ({ ...i })),
+      steps: src.steps.map((x) => ({ ...x })),
+      tips: { ...src.tips },
+      notes: src.tips.zh,
+      diet: (src.diet || []).slice(),
+      tags: (src.tags || []).slice(),
+      copyOf: src.builtin ? src.id : src.copyOf || "",
+      sourceUrl: src.sourceUrl || "",
+    });
+    state.recipes.push(copy);
+    if (!save()) {
+      state.recipes.pop();
+      return;
+    }
+    ui.recipeId = copy.id;
+    toast(tr("recipe.copied", { no: copy.no }));
+    setTab("recipe");
     return;
   }
   if (action === "menu-open") {
@@ -4195,6 +5117,25 @@ async function onClick(ev) {
     await generateShare();
     return;
   }
+  if (action === "send-update" || action === "send-update-native") {
+    if (act.disabled) return;
+    act.disabled = true;
+    try {
+      await sendUpdate(action === "send-update-native" ? "native" : "wa");
+    } finally {
+      act.disabled = false;
+    }
+    return;
+  }
+  if (action === "update-copy" && ui.updateSent) {
+    try {
+      await navigator.clipboard.writeText(ui.updateSent.msg);
+      toast(tr("toast.shareCopied"));
+    } catch {
+      toast(tr("toast.longPress"));
+    }
+    return;
+  }
   if (action === "share-revoke") {
     const h = helper();
     if (!h) return;
@@ -4334,8 +5275,10 @@ async function onChange(ev) {
   }
   if (el.name === "recipeId" && el.closest("#dish-form")) {
     const textEl = document.querySelector("#dish-form [name=text]");
-    const r = state.recipes.find((x) => x.id === el.value);
-    if (textEl && r && !textEl.value.trim()) textEl.value = r.name;
+    const r = allRecipes(state.recipes).find((x) => x.id === el.value);
+    if (textEl && r && !textEl.value.trim()) textEl.value = recipeName(r);
+    const hint = document.querySelector("[data-dish-hint]");
+    if (hint) hint.innerHTML = dishHintHtml(el.value, document.getElementById("dish-form")?.getAttribute("data-date") || today());
     return;
   }
   if (action === "employer-name") {
@@ -4439,10 +5382,51 @@ async function onChange(ev) {
     if (!p) return;
     const item = (p.shopItems || []).find((i) => i.id === el.getAttribute("data-id"));
     if (!item) return;
-    if (action === "h-item-bought") item.bought = el.checked;
+    if (action === "h-item-bought") {
+      item.bought = el.checked;
+      refreshShopDom(el);
+    }
     if (action === "h-item-price") item.paidPrice = el.value === "" ? "" : Number(el.value);
     persistSessionPayload();
     writeShopBackToEmployer();
+    return;
+  }
+  if (action === "item-tick" && role !== "helper") {
+    const item = state.shopItems.find((i) => i.id === el.getAttribute("data-id"));
+    if (!item) return;
+    item.bought = el.checked;
+    save();
+    refreshShopDom(el);
+    return;
+  }
+  if (action === "recent-days" && role !== "helper") {
+    state.settings.recentBuyDays = RECENT_CHOICES.includes(Number(el.value)) ? Number(el.value) : 7;
+    save();
+    render();
+    return;
+  }
+  if (action === "diet-toggle" && role !== "helper") {
+    const key = el.getAttribute("data-key");
+    state.settings.diet = { ...normalizeDiet(state.settings.diet), [key]: el.checked };
+    state.settings.diet = normalizeDiet(state.settings.diet);
+    save();
+    ui.dietOpen = true;
+    render();
+    return;
+  }
+  if (action === "cook-tick") {
+    const rid = el.getAttribute("data-rid");
+    const n = Number(el.getAttribute("data-i"));
+    const cur = new Set(ui.cookTicks[rid] || []);
+    if (el.checked) cur.add(n);
+    else cur.delete(n);
+    ui.cookTicks[rid] = Array.from(cur);
+    return;
+  }
+  if (el.name === "rpick") {
+    const n = document.querySelectorAll("input[name=rpick]:checked").length;
+    const c = document.querySelector("[data-pick-count]");
+    if (c) c.textContent = tr("shop.pick.count", { n });
     return;
   }
 }
@@ -4468,12 +5452,12 @@ function onSubmit(ev) {
     }
     ui.docDraft = null;
     if (isArrangedRestPolicy(data.restDay)) {
-      toast(tr("toast.savedArranged"));
       ui.leavePane = "rest";
-      setTab("leave");
-    } else {
-      toast(tr("toast.saved"));
       setTab("home");
+      toast(tr("toast.savedArranged"));
+    } else {
+      setTab("home");
+      toast(tr("toast.saved"));
     }
   }
   if (form.getAttribute("id") === "leave-form") {
@@ -4552,7 +5536,7 @@ function onSubmit(ev) {
     const date = form.getAttribute("data-date");
     const editId = form.getAttribute("data-id");
     const slotId = String(fd.get("slot") || "");
-    const recipeId = state.recipes.some((r) => r.id === String(fd.get("recipeId"))) ? String(fd.get("recipeId")) : "";
+    const recipeId = allRecipes(state.recipes).some((r) => r.id === String(fd.get("recipeId"))) ? String(fd.get("recipeId")) : "";
     const text = String(fd.get("text") || "").trim().slice(0, 80);
     if (!text && !recipeId) return toast(tr("menu.dish.err"));
     if (!state.menu.slots.some((s) => s.id === slotId)) return;
@@ -4607,70 +5591,163 @@ function onSubmit(ev) {
     render();
     return;
   }
+  if (form.getAttribute("id") === "web-recipe-form") {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    const url = normalizeSourceUrl(fd.get("sourceUrl"));
+    if (!url) return toast(tr("recipe.web.badUrl"));
+    const paste = String(fd.get("paste") || "");
+    const parsed = parseRecipeText(paste);
+    const name = String(fd.get("name") || "").trim() || parsed.name;
+    const isEn = !/[\u3400-\u9fff]/.test(name);
+    ui.recipeDraft = newRecipe({
+      nameZh: isEn ? "" : name,
+      nameEn: isEn ? name : "",
+      name,
+      ingredients: parsed.ingredients,
+      steps: parsed.steps,
+      tips: parsed.tips,
+      sourceUrl: url,
+    });
+    ui.recipePhoto = "";
+    ui.sheet = { type: "recipe", draft: true };
+    render();
+    toast(parsed.ingredients.length || parsed.steps.length ? tr("recipe.web.parsed", { i: parsed.ingredients.length, s: parsed.steps.length }) : tr("recipe.web.nothing"));
+    return;
+  }
   if (form.getAttribute("id") === "recipe-form") {
     ev.preventDefault();
     const fd = new FormData(form);
-    const name = String(fd.get("name") || "").trim().slice(0, 80);
-    if (!name) return toast(tr("recipe.err"));
+    const nameZh = String(fd.get("nameZh") || "").trim().slice(0, 80);
+    const nameEn = String(fd.get("nameEn") || "").trim().slice(0, 80);
+    if (!nameZh && !nameEn) return toast(tr("recipe.err"));
     const id = form.getAttribute("data-id");
+    const rows = (v, max) => String(v || "").split(/\r?\n/).map((x) => x.trim().slice(0, max)).slice(0, 80);
+    const zl = rows(fd.get("ingZh"), 160);
+    const el = rows(fd.get("ingEn"), 160);
+    const ingredients = [];
+    for (let i = 0; i < Math.max(zl.length, el.length); i++) {
+      const z = zl[i] ? parseIngredient(zl[i]) : { name: "", qty: "" };
+      const e = el[i] ? parseIngredient(el[i]) : { name: "", qty: "" };
+      if (!z.name && !e.name) continue;
+      ingredients.push({ zh: z.name, en: e.name, qty: z.qty || (z.name ? "" : ""), qtyEn: e.qty });
+    }
+    const sz = rows(fd.get("stepsZh"), 400);
+    const se = rows(fd.get("stepsEn"), 400);
+    const steps = [];
+    for (let i = 0; i < Math.max(sz.length, se.length); i++) {
+      if (sz[i] || se[i]) steps.push({ zh: sz[i] || "", en: se[i] || "" });
+    }
+    const tips = { zh: String(fd.get("tipsZh") || "").trim().slice(0, 800), en: String(fd.get("tipsEn") || "").trim().slice(0, 800) };
     const fields = {
-      name,
+      nameZh,
+      nameEn,
+      name: nameZh || nameEn,
+      category: String(fd.get("category") || "other"),
+      difficulty: String(fd.get("difficulty") || "easy"),
+      prepMins: Number(fd.get("prepMins")) || 0,
       photo: ui.recipePhoto || "",
       servings: String(fd.get("servings") || "").trim().slice(0, 20),
-      ingredients: splitLines(fd.get("ingredients")),
-      steps: splitLines(fd.get("steps"), 40, 400),
+      ingredients,
+      steps,
+      tips,
+      notes: tips.zh,
+      diet: fd.getAll("diet").map(String),
       tags: splitTags(fd.get("tags")),
-      notes: String(fd.get("notes") || "").trim().slice(0, 800),
+      sourceUrl: normalizeSourceUrl(fd.get("sourceUrl")),
       updatedAt: new Date().toISOString(),
     };
     const prev = state.recipes.slice();
     const idx = state.recipes.findIndex((r) => r.id === id);
     if (idx >= 0) state.recipes[idx] = { ...state.recipes[idx], ...fields };
-    else state.recipes.push(newRecipe({ id, ...fields }));
+    else state.recipes.push(newRecipe({ id, no: nextRecipeNo(state.recipes), ...fields }));
+    state.recipes = normalizeRecipes(state.recipes);
     if (!save()) {
       state.recipes = prev;
       return;
     }
     ui.sheet = null;
     ui.recipePhoto = "";
+    ui.recipeDraft = null;
     ui.recipeId = id;
+    if (ui.tab !== "recipe") setTab("recipe");
     toast(tr("recipe.saved"));
     return;
   }
   if (form.getAttribute("id") === "recipe-shop-form") {
     ev.preventDefault();
     const h = helper();
-    const r = state.recipes.find((x) => x.id === form.getAttribute("data-id"));
+    const r = allRecipes(state.recipes).find((x) => x.id === form.getAttribute("data-id"));
     if (!h || !r) return;
     const fd = new FormData(form);
     const picks = fd.getAll("ing").map(Number).filter((i) => r.ingredients[i]);
     if (!picks.length) return toast(tr("recipe.shop.pickSome"));
     let list = state.shopLists.find((l) => l.id === String(fd.get("list")));
     if (!list) {
-      list = newShopList({ helperId: h.id, title: r.name, place: "market", date: today() });
+      list = newShopList({ helperId: h.id, title: recipeName(r), place: "market", date: today() });
       state.shopLists.push(list);
     }
-    const have = new Set(state.shopItems.filter((i) => i.listId === list.id).map((i) => catalogKey(i.name)));
-    let added = 0;
-    let skipped = 0;
-    for (const i of picks) {
-      const { name, qty } = parseIngredient(r.ingredients[i]);
-      if (!name) continue;
-      if (have.has(catalogKey(name))) {
-        skipped += 1;
-        continue;
-      }
-      have.add(catalogKey(name));
-      const cat = findCatalog(state, name);
-      state.shopItems.push(newShopItem({ listId: list.id, helperId: h.id, name, qty, suggestedPrice: cat ? cat.lastPrice : null }));
-      added += 1;
-    }
+    const dish = { key: r.id, no: r.no, name: recipeName(r) };
+    const rowsAgg = aggregateIngredients(picks.map((i) => ({ ing: r.ingredients[i], dish, group: "" })));
+    const res = addAggToList(list, rowsAgg);
     if (!save()) return;
     ui.sheet = null;
     ui.shopListId = list.id;
     ui.shopCal = { year: Number(listDate(list).slice(0, 4)), month: Number(listDate(list).slice(5, 7)) - 1 };
-    toast(skipped ? tr("recipe.shop.addedSkip", { n: added, s: skipped, list: list.title }) : tr("recipe.shop.added", { n: added, list: list.title }));
     setTab("shop-detail");
+    addResultToast(res, list);
+    return;
+  }
+  if (form.getAttribute("id") === "gen-form") {
+    ev.preventDefault();
+    const h = helper();
+    if (!h) return;
+    const fd = new FormData(form);
+    const days = fd.getAll("gday").map(String);
+    if (!days.length) return toast(tr("menu.gen.pickDay"));
+    const grouped = Boolean(form.elements.group?.checked);
+    const recs = allRecipes(state.recipes);
+    const entries = [];
+    let noRecipe = 0;
+    for (const date of days.sort()) {
+      for (const slot of state.menu.slots) {
+        for (const d of (state.menu.days[date] || {})[slot.id] || []) {
+          const r = recs.find((x) => x.id === d.recipeId);
+          if (!r) {
+            noRecipe += 1;
+            continue;
+          }
+          entries.push(...recipeEntries(r, grouped ? slotLabel(slot, tr) : ""));
+        }
+      }
+    }
+    if (!entries.length) return toast(tr("menu.gen.none"));
+    const dateVal = /^\d{4}-\d{2}-\d{2}$/.test(String(fd.get("date") || "")) ? String(fd.get("date")) : today();
+    const list = newShopList({ helperId: h.id, title: String(fd.get("title") || "").trim() || tr("menu.gen.defaultTitle", { from: "", to: "" }), place: "market", date: dateVal });
+    state.shopLists.push(list);
+    const res = addAggToList(list, aggregateIngredients(entries));
+    if (!save()) return;
+    ui.sheet = null;
+    ui.shopListId = list.id;
+    ui.shopView = "list";
+    ui.shopCal = { year: Number(dateVal.slice(0, 4)), month: Number(dateVal.slice(5, 7)) - 1 };
+    setTab("shop-detail");
+    addResultToast(res, list);
+    if (noRecipe) setTimeout(() => toast(tr("menu.gen.skipped", { n: noRecipe })), 3000);
+    return;
+  }
+  if (form.getAttribute("id") === "list-recipes-form") {
+    ev.preventDefault();
+    const list = state.shopLists.find((l) => l.id === form.getAttribute("data-list"));
+    const ids = new FormData(form).getAll("rpick").map(String);
+    if (!list) return;
+    if (!ids.length) return toast(tr("shop.pick.none"));
+    const res = addRecipesToList(list, ids);
+    if (!save()) return;
+    ui.sheet = null;
+    ui.shopListId = list.id;
+    render();
+    addResultToast(res, list);
     return;
   }
   if (form.getAttribute("id") === "consent-form") {
@@ -4765,12 +5842,15 @@ function onSubmit(ev) {
       date: /^\d{4}-\d{2}-\d{2}$/.test(String(fd.get("date") || "")) ? String(fd.get("date")) : today(),
     });
     state.shopLists.push(rec);
+    const picks = fd.getAll("rpick").map(String);
+    const res = picks.length ? addRecipesToList(rec, picks) : null;
     ui.shopCal = { year: Number(rec.date.slice(0, 4)), month: Number(rec.date.slice(5, 7)) - 1 };
     save();
     ui.sheet = null;
     ui.shopListId = rec.id;
-    toast(tr("toast.listCreated"));
     setTab("shop-detail");
+    if (res) addResultToast(res, rec);
+    else toast(tr("toast.listCreated"));
   }
   if (form.getAttribute("id") === "shop-item-form") {
     ev.preventDefault();
@@ -4815,6 +5895,76 @@ function onSubmit(ev) {
   }
 }
 
+/** Keep what the helper did on this phone (purchase ticks) when a newer snapshot arrives. */
+function mergeHelperLocal(old, nw) {
+  const out = { ...nw };
+  const oldById = new Map((old.shopItems || []).map((i) => [i.id, i]));
+  out.shopItems = (nw.shopItems || []).map((i) => {
+    const o = oldById.get(i.id);
+    if (!o) return i;
+    const next = { ...i };
+    if (o.bought && !i.bought) next.bought = true;
+    if ((next.paidPrice === "" || next.paidPrice == null) && o.paidPrice !== "" && o.paidPrice != null) next.paidPrice = o.paidPrice;
+    return next;
+  });
+  if (old.helper && nw.helper) {
+    const keep = {};
+    if (!nw.helper.docs && old.helper.docs) keep.docs = old.helper.docs;
+    if (!nw.helper.passportNo && old.helper.passportNo) keep.passportNo = old.helper.passportNo;
+    if (!nw.helper.hkidNo && old.helper.hkidNo) keep.hkidNo = old.helper.hkidNo;
+    out.helper = { ...nw.helper, ...keep };
+  }
+  return out;
+}
+
+/** Decide whether a decrypted snapshot replaces the stored one. Older snapshots never overwrite newer data. */
+function finishOpen(payload, pin) {
+  const cur = helperSession?.payload;
+  const sameHelper = cur?.helper?.id && cur.helper.id === payload.helper.id;
+  const newer = String(payload.generatedAt || "") > String(cur?.generatedAt || "");
+  const sameStamp = String(payload.generatedAt || "") === String(cur?.generatedAt || "");
+  let result = "new";
+  if (sameHelper) {
+    if (!newer) {
+      result = sameStamp ? "same" : "older";
+      if (pin && helperSession && helperSession.pin !== pin && sameStamp) {
+        helperSession = { ...helperSession, pin };
+        saveSession(helperSession);
+      }
+    } else {
+      helperSession = { payload: mergeHelperLocal(cur, payload), unlockedAt: new Date().toISOString(), pin, updatedAt: new Date().toISOString() };
+      saveSession(helperSession);
+      result = "updated";
+    }
+  } else {
+    helperSession = { payload, unlockedAt: new Date().toISOString(), pin };
+    saveSession(helperSession);
+  }
+  setRole("helper");
+  ui.pendingShare = "";
+  ui.pinError = "";
+  if (location.hash.startsWith("#/v/")) history.replaceState(null, "", "#/h");
+  ui.tab = "h";
+  location.hash = "#/h";
+  const name = helperSession.payload.helper.name || tr("toast.yourData");
+  if (result === "updated") toast(tr("update.helper.done", { when: fmtDateTime(helperSession.payload.generatedAt) }));
+  else if (result === "same") toast(tr("update.helper.same"));
+  else if (result === "older") toast(tr("update.helper.older", { when: fmtDateTime(cur.generatedAt) }));
+  else toast(tr("toast.opened", { name }));
+  render();
+  return result;
+}
+
+async function autoUpdateFromLink(packed) {
+  try {
+    const payload = await decryptShare(packed, helperSession.pin);
+    if (!payload?.helper) return;
+    finishOpen(payload, helperSession.pin);
+  } catch {
+    /* different PIN: the PIN form stays open */
+  }
+}
+
 async function unlockHelper(form) {
   const fd = new FormData(form);
   const pin = String(fd.get("pin") || "").trim();
@@ -4835,24 +5985,19 @@ async function unlockHelper(form) {
     render();
     return;
   }
+  let newest = null;
   for (const pack of tries) {
     try {
       const payload = await decryptShare(pack, pin);
       if (!payload?.helper) continue;
-      helperSession = { payload, unlockedAt: new Date().toISOString() };
-      saveSession(helperSession);
-      setRole("helper");
-      ui.pendingShare = "";
-      ui.pinError = "";
-      if (location.hash.startsWith("#/v/")) history.replaceState(null, "", "#/h");
-      ui.tab = "h";
-      location.hash = "#/h";
-      toast(tr("toast.opened", { name: payload.helper.name || tr("toast.yourData") }));
-      render();
-      return;
+      if (!newest || String(payload.generatedAt || "") > String(newest.generatedAt || "")) newest = payload;
     } catch {
       /* try next */
     }
+  }
+  if (newest) {
+    finishOpen(newest, pin);
+    return;
   }
   ui.pinError = "pin.err.wrong";
   render();
@@ -4949,8 +6094,27 @@ document.addEventListener("click", onClick);
 document.addEventListener("change", onChange);
 document.addEventListener("submit", onSubmit);
 
+/** PWA share target: ?title=&text=&url= from the OS share sheet opens the "add from web" sheet. */
+function consumeShareTarget() {
+  const q = new URLSearchParams(location.search);
+  if (!(q.has("url") || q.has("text") || q.has("title"))) return;
+  const title = q.get("title") || "";
+  const text = q.get("text") || "";
+  const url = normalizeSourceUrl(q.get("url") || findUrl(text) || findUrl(title));
+  history.replaceState(null, "", `${location.pathname}#/recipes`);
+  if (role !== "employer" || !state.helpers.length) return;
+  const body = text.replace(/https?:\/\/\S+/gi, "").trim();
+  ui.pendingWeb = { name: title.replace(/https?:\/\/\S+/gi, "").trim().slice(0, 80), url, text: body };
+}
+
 try {
+  consumeShareTarget();
   parseHash();
+  if (ui.pendingWeb) {
+    ui.tab = "recipes";
+    ui.sheet = { type: "web-recipe", prefill: ui.pendingWeb };
+    ui.pendingWeb = null;
+  }
   applyDocumentLang();
   if (!role && ui.tab !== "h-enter") ui.tab = "role";
   if (role === "employer" && !state.helpers.length && !["helper-new", "onboard", "role"].includes(ui.tab)) ui.tab = "onboard";
