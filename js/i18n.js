@@ -1,7 +1,7 @@
 /* Lightweight i18n for the FDW household helper. Languages: zh-Hant (default) and en.
    Saved choice (localStorage "fdh-lang-v1") wins over device language. */
-import { zhHant } from "./i18n-zh.js?v=13";
-import { en } from "./i18n-en.js?v=13";
+import { zhHant } from "./i18n-zh.js?v=14";
+import { en } from "./i18n-en.js?v=14";
 
 export const LANG_KEY = "fdh-lang-v1";
 export const LANGS = [

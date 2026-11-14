@@ -1,9 +1,9 @@
-import { getLang, t } from "./i18n.js?v=13";
-import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=13";
-import { cleanIdNumber, normalizeDocs } from "./docs.js?v=13";
-import { defaultContractEnd } from "./rules.js?v=13";
-import { todayISO } from "./dates.js?v=13";
-import { emptyMenu, normalizeDiet, normalizeMenu, normalizeRecipes } from "./menu.js?v=13";
+import { getLang, t } from "./i18n.js?v=14";
+import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=14";
+import { cleanIdNumber, normalizeDocs } from "./docs.js?v=14";
+import { defaultContractEnd } from "./rules.js?v=14";
+import { todayISO } from "./dates.js?v=14";
+import { emptyMenu, normalizeDiet, normalizeMenu, normalizeRecipes } from "./menu.js?v=14";
 
 export const STORAGE_KEY = "fdh-employer-v1";
 
@@ -455,75 +455,69 @@ export const UI_PREFS_KEY = "fdh-ui-prefs-v1";
 
 export const UI_NAV = {
   employer: [
-    { id: "leave", labelKey: "tab.leave" },
-    { id: "tasks", labelKey: "tab.tasks" },
-    { id: "rules", labelKey: "tab.rules" },
-    { id: "shop", labelKey: "shop.title" },
-    { id: "menu", labelKey: "menu.title" },
-    { id: "pay", labelKey: "pay.title" },
-    { id: "share", labelKey: "share.title" },
+    { id: "leave", labelKey: "tab.leave", icon: "leaf" },
+    { id: "tasks", labelKey: "tab.tasks", icon: "checklist" },
+    { id: "rules", labelKey: "tab.rules", icon: "rule" },
+    { id: "shop", labelKey: "shop.title", icon: "basket" },
+    { id: "menu", labelKey: "menu.title", icon: "utensils" },
+    { id: "pay", labelKey: "pay.title", icon: "coin" },
+    { id: "share", labelKey: "share.title", icon: "share" },
   ],
   helper: [
-    { id: "h-leave", labelKey: "tab.leave" },
-    { id: "h-tasks", labelKey: "tab.tasks" },
-    { id: "h-rules", labelKey: "tab.rules" },
-    { id: "h-shop", labelKey: "shop.title" },
-    { id: "h-menu", labelKey: "menu.title" },
-    { id: "h-pay", labelKey: "pay.title" },
+    { id: "h-leave", labelKey: "tab.leave", icon: "leaf" },
+    { id: "h-tasks", labelKey: "tab.tasks", icon: "checklist" },
+    { id: "h-rules", labelKey: "tab.rules", icon: "rule" },
+    { id: "h-shop", labelKey: "shop.title", icon: "basket" },
+    { id: "h-menu", labelKey: "menu.title", icon: "utensils" },
+    { id: "h-pay", labelKey: "pay.title", icon: "coin" },
   ],
 };
 
-export const UI_HOME = {
-  employer: [
-    { id: "welcome", labelKey: "prefs.home.welcome" },
-    { id: "update", labelKey: "prefs.home.update" },
-    { id: "stats", labelKey: "prefs.home.stats" },
-    { id: "helper", labelKey: "prefs.home.helper" },
-    { id: "reminders", labelKey: "home.reminders" },
-    { id: "menu", labelKey: "menu.home.title" },
-    { id: "docs", labelKey: "doc.panel.title" },
-    { id: "holidays", labelKey: "prefs.home.holidays" },
-    { id: "entries", labelKey: "prefs.home.entries" },
-    { id: "actions", labelKey: "prefs.home.actions" },
-  ],
-  helper: [
-    { id: "welcome", labelKey: "prefs.home.welcome" },
-    { id: "stats", labelKey: "prefs.home.stats" },
-    { id: "entries", labelKey: "prefs.home.entries" },
-    { id: "reminders", labelKey: "home.reminders" },
-    { id: "menu", labelKey: "menu.home.title" },
-    { id: "docs", labelKey: "doc.panel.title" },
-    { id: "ack", labelKey: "prefs.home.ack" },
-  ],
+export const DEFAULT_NAV_TABS = {
+  employer: ["leave", "tasks", "rules"],
+  helper: ["h-leave", "h-tasks", "h-rules"],
 };
+
+export const NAV_TAB_MAX = 3;
 
 function uiRoleBucket(role) {
   return role === "helper" ? "helper" : "employer";
 }
 
-function uiFlags(list, raw) {
-  const out = {};
-  const src = raw && typeof raw === "object" ? raw : {};
-  for (const item of list) out[item.id] = src[item.id] !== false;
+function allowedNavIds(role) {
+  return UI_NAV[uiRoleBucket(role)].map((item) => item.id);
+}
+
+export function normalizeNavTabs(role, raw) {
+  const allowed = new Set(allowedNavIds(role));
+  const defaults = DEFAULT_NAV_TABS[uiRoleBucket(role)].slice();
+  if (!Array.isArray(raw)) return defaults;
+  const out = [];
+  const seen = new Set();
+  for (const id of raw) {
+    if (!allowed.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+    if (out.length >= NAV_TAB_MAX) break;
+  }
   return out;
 }
 
 export function emptyUiPrefs() {
   return {
-    employer: { nav: uiFlags(UI_NAV.employer, {}), home: uiFlags(UI_HOME.employer, {}) },
-    helper: { nav: uiFlags(UI_NAV.helper, {}), home: uiFlags(UI_HOME.helper, {}) },
+    employer: { tabs: DEFAULT_NAV_TABS.employer.slice() },
+    helper: { tabs: DEFAULT_NAV_TABS.helper.slice() },
   };
 }
 
 export function normalizeUiPrefs(raw) {
-  const base = emptyUiPrefs();
   const src = raw && typeof raw === "object" ? raw : {};
+  const out = emptyUiPrefs();
   for (const role of ["employer", "helper"]) {
     const r = src[role] && typeof src[role] === "object" ? src[role] : {};
-    base[role].nav = uiFlags(UI_NAV[role], r.nav);
-    base[role].home = uiFlags(UI_HOME[role], r.home);
+    out[role] = { tabs: normalizeNavTabs(role, r.tabs) };
   }
-  return base;
+  return out;
 }
 
 export function loadUiPrefs() {
@@ -543,30 +537,69 @@ export function saveUiPrefs(prefs) {
   return next;
 }
 
-export function isNavVisible(prefs, role, id) {
-  if (id === "home" || id === "more" || id === "h" || id === "h-more") return true;
-  const bucket = uiRoleBucket(role);
-  return prefs?.[bucket]?.nav?.[id] !== false;
+export function getNavTabs(prefs, role) {
+  return normalizeNavTabs(role, prefs?.[uiRoleBucket(role)]?.tabs);
 }
 
-export function isHomeVisible(prefs, role, id) {
+export function setNavTabs(prefs, role, tabs) {
   const bucket = uiRoleBucket(role);
-  return prefs?.[bucket]?.home?.[id] !== false;
-}
-
-export function setUiPref(prefs, role, group, id, on) {
-  const bucket = uiRoleBucket(role);
-  const list = group === "nav" ? UI_NAV[bucket] : UI_HOME[bucket];
-  if (!list.some((item) => item.id === id)) return prefs;
   const next = {
     ...prefs,
-    [bucket]: {
-      ...prefs[bucket],
-      [group]: { ...prefs[bucket][group], [id]: Boolean(on) },
-    },
+    [bucket]: { ...prefs?.[bucket], tabs: normalizeNavTabs(role, tabs) },
   };
   return saveUiPrefs(next);
 }
 
+export function addNavTab(prefs, role, id) {
+  const cur = getNavTabs(prefs, role);
+  if (cur.includes(id) || cur.length >= NAV_TAB_MAX) return prefs;
+  return setNavTabs(prefs, role, [...cur, id]);
+}
+
+export function removeNavTab(prefs, role, id) {
+  return setNavTabs(prefs, role, getNavTabs(prefs, role).filter((x) => x !== id));
+}
+
+export function moveNavTab(prefs, role, id, dir) {
+  const cur = getNavTabs(prefs, role);
+  const i = cur.indexOf(id);
+  const j = i + Number(dir);
+  if (i < 0 || j < 0 || j >= cur.length) return prefs;
+  const next = cur.slice();
+  [next[i], next[j]] = [next[j], next[i]];
+  return setNavTabs(prefs, role, next);
+}
+
 export { uid };
+
+export const SHOP_COLLAPSE_KEY = "fdh-shop-collapse-v1";
+
+function shopCollapseId(listId, parentId) {
+  return `${listId}::${parentId}`;
+}
+
+export function loadShopCollapse() {
+  try {
+    const raw = localStorage.getItem(SHOP_COLLAPSE_KEY);
+    const data = raw ? JSON.parse(raw) : {};
+    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  } catch (err) {
+    console.warn("Could not read shop collapse prefs", err);
+    return {};
+  }
+}
+
+export function isShopGroupCollapsed(listId, parentId) {
+  if (!listId || !parentId) return false;
+  return !!loadShopCollapse()[shopCollapseId(listId, parentId)];
+}
+
+export function setShopGroupCollapsed(listId, parentId, collapsed) {
+  if (!listId || !parentId) return;
+  const map = loadShopCollapse();
+  const key = shopCollapseId(listId, parentId);
+  if (collapsed) map[key] = true;
+  else delete map[key];
+  localStorage.setItem(SHOP_COLLAPSE_KEY, JSON.stringify(map));
+}
 
