@@ -525,10 +525,12 @@ h2 {
   border-bottom: 1px solid var(--line);
 }
 
-.card > .row:first-child {
+.card > .row:first-child,
+.card > .swipe-row:first-child .row {
   padding-top: 0.15rem;
 }
-.card > .row:last-child {
+.card > .row:last-child,
+.card > .swipe-row:last-child .row {
   border-bottom: 0;
   padding-bottom: 0.15rem;
 }
@@ -1194,7 +1196,8 @@ textarea::placeholder {
   align-items: start;
 }
 
-.shop-item:last-child {
+.shop-item:last-child,
+.swipe-row:last-child .shop-item {
   border-bottom: 0;
 }
 
@@ -3516,4 +3519,128 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
   overflow-wrap: anywhere;
   hyphens: auto;
   padding: 0 0.12rem;
+}
+
+
+/* v15 swipe-to-delete */
+.swipe-row {
+  position: relative;
+  overflow: hidden;
+  max-width: 100%;
+  touch-action: pan-y;
+}
+.swipe-front {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  background: var(--surface, #fff);
+  box-sizing: border-box;
+  transition: transform 0.2s ease;
+  will-change: transform;
+}
+.swipe-front > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.swipe-row.is-dragging .swipe-front {
+  transition: none;
+}
+.swipe-del-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 5.5rem;
+  z-index: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: #c4473a;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.swipe-row.is-open .swipe-del-btn,
+.swipe-row.is-dragging .swipe-del-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+.swipe-del-btn:active {
+  background: #a33930;
+}
+.swipe-hover-del {
+  display: none;
+  flex: 0 0 auto;
+  align-self: center;
+  margin: 0 0.15rem 0 0.35rem;
+  padding: 0.3rem 0.55rem;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font: inherit;
+  font-weight: 650;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+@media (hover: hover) and (pointer: fine) {
+  .swipe-row .swipe-hover-del {
+    display: inline-flex;
+    align-items: center;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  .swipe-row .swipe-inline-del {
+    display: none;
+  }
+}
+.tick-item.swipe-row {
+  display: block;
+  padding: 0;
+}
+.tick-item.swipe-row .swipe-front {
+  background: var(--surface, #fff);
+  align-items: flex-start;
+  padding: 0.15rem 0;
+}
+.tick-group > .swipe-row .swipe-front,
+.shop-group > .swipe-row .swipe-front {
+  background: var(--surface, #fff);
+}
+.shop-group > .swipe-row .shop-item.is-parent {
+  background: color-mix(in srgb, var(--pine-soft, #e6f2eb) 55%, var(--surface, #fff));
+}
+.swipe-row.rule-swipe {
+  margin-top: 0.65rem;
+}
+.swipe-row.rule-swipe .swipe-front {
+  background: transparent;
+}
+.swipe-row.rule-swipe .rule-card {
+  margin: 0;
+}
+.recipe-grid > .swipe-row {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.recipe-grid > .swipe-row .swipe-front {
+  background: transparent;
+  height: 100%;
+}
+.recipe-grid > .swipe-row .recipe-card {
+  width: 100%;
+  height: 100%;
+}
+.meal-slot > .swipe-row .dish {
+  width: 100%;
 }
