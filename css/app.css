@@ -288,8 +288,9 @@ button {
 .tabbar {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(var(--tab-cols, 5), minmax(0, 1fr));
   gap: 0;
+  overflow-x: hidden;
   padding: 0.25rem max(0.3rem, var(--safe-l)) calc(0.25rem + var(--safe-b)) max(0.3rem, var(--safe-r));
   background: var(--shell);
   color: var(--shell-ink);
@@ -3329,3 +3330,21 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .su-badge.ok { background: var(--pine-soft, #e6f2eb); color: var(--pine, #17684d); }
 .su-sent { margin-top: 0.7rem; padding-top: 0.6rem; border-top: 1px dashed var(--line, #d8ddd9); }
 .last-updated { margin: 0.2rem 0 0; font-size: 0.86rem; color: var(--muted, #5f6b66); }
+
+/* v13 customisable display */
+.prefs-card { margin-top: 0.9rem; }
+.prefs-card .switch-field { width: 100%; }
+/* tabbar compact */
+.tabbar .tab-btn {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 0.15rem;
+  text-align: center;
+}
+.prefs-card .prefs-h {
+  margin: 1rem 0 0.15rem;
+  font-size: 0.95rem;
+}
+.prefs-card .switch-field span:first-child {
+  min-width: 0;
+}

@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=12";
+} from "./data.js?v=13";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=12";
-import { escapeHtml, icon } from "./icons.js?v=12";
+} from "./dates.js?v=13";
+import { escapeHtml, icon } from "./icons.js?v=13";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=12";
+} from "./reminders.js?v=13";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=12";
+} from "./rules.js?v=13";
 import {
   arrangedRestList,
   currentHelper,
@@ -91,7 +91,13 @@ import {
   toggleArrangedRestDay,
   normalizeConsent,
   uid,
-} from "./storage.js?v=12";
+  UI_NAV,
+  UI_HOME,
+  loadUiPrefs,
+  setUiPref,
+  isNavVisible,
+  isHomeVisible,
+} from "./storage.js?v=13";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -117,7 +123,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=12";
+} from "./share.js?v=13";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -132,7 +138,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=12";
+} from "./docs.js?v=13";
 import {
   CATEGORIES,
   DIET_KEYS,
@@ -179,8 +185,8 @@ import {
   urlHost,
   weekDates,
   webSearchUrls,
-} from "./menu.js?v=12";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=12";
+} from "./menu.js?v=13";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=13";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -201,6 +207,7 @@ const HELPER_TABS = [
 let state = loadState();
 let role = loadRole();
 let helperSession = loadSession();
+let uiPrefs = loadUiPrefs();
 const ui = {
   tab: "home",
   leavePane: "rest",
@@ -550,47 +557,90 @@ function header(titleSub) {
 
 const NAV_HIDDEN = ["role", "onboard", "helper-new", "helper-edit", "h-enter"];
 
-function sidebar() {
-  if (NAV_HIDDEN.includes(ui.tab)) return "";
-  const items =
-    role === "helper"
-      ? [
-          ["h", "tab.mine", "home"],
-          ["h-leave", "tab.leave", "leaf"],
-          ["h-tasks", "tab.tasks", "checklist"],
-          ["h-rules", "tab.rules", "rule"],
-          ["h-shop", "shop.title", "basket"],
-          ["h-menu", "menu.title", "utensils"],
-          ["h-pay", "pay.title", "coin"],
-          ["h-more", "tab.more", "more"],
-        ]
-      : [
-          ["home", "tab.home", "home"],
-          ["leave", "tab.leave", "leaf"],
-          ["tasks", "tab.tasks", "checklist"],
-          ["rules", "tab.rules", "rule"],
-          ["shop", "shop.title", "basket"],
-          ["menu", "menu.title", "utensils"],
-          ["pay", "pay.title", "coin"],
-          ["share", "share.title", "share"],
-          ["more", "tab.more", "more"],
-        ];
+function navOn(id) {
+  return isNavVisible(uiPrefs, role, id);
+}
+
+function homeOn(id) {
+  return isHomeVisible(uiPrefs, role, id);
+}
+
+function allNavItems() {
+  return role === "helper"
+    ? [
+        ["h", "tab.mine", "home"],
+        ["h-leave", "tab.leave", "leaf"],
+        ["h-tasks", "tab.tasks", "checklist"],
+        ["h-rules", "tab.rules", "rule"],
+        ["h-shop", "shop.title", "basket"],
+        ["h-menu", "menu.title", "utensils"],
+        ["h-pay", "pay.title", "coin"],
+        ["h-more", "tab.more", "more"],
+      ]
+    : [
+        ["home", "tab.home", "home"],
+        ["leave", "tab.leave", "leaf"],
+        ["tasks", "tab.tasks", "checklist"],
+        ["rules", "tab.rules", "rule"],
+        ["shop", "shop.title", "basket"],
+        ["menu", "menu.title", "utensils"],
+        ["pay", "pay.title", "coin"],
+        ["share", "share.title", "share"],
+        ["more", "tab.more", "more"],
+      ];
+}
+
+function visibleNavItems() {
+  return allNavItems().filter(([id]) => navOn(id));
+}
+
+function navCurrentId(tab) {
   const MORE_GROUP = ["more", "guide", "backup", "remind"];
   const H_MORE_GROUP = ["h-more", "h-remind", "h-rights"];
-  const cur =
-    ui.tab === "shop-detail"
+  let cur =
+    tab === "shop-detail"
       ? "shop"
-      : ui.tab === "h-shop-detail"
+      : tab === "h-shop-detail"
         ? "h-shop"
-        : role !== "helper" && ["menu", "recipes", "recipe", "cook"].includes(ui.tab)
+        : role !== "helper" && ["menu", "recipes", "recipe", "cook"].includes(tab)
           ? "menu"
-          : role === "helper" && ["h-menu", "h-recipes", "h-recipe", "h-cook"].includes(ui.tab)
+          : role === "helper" && ["h-menu", "h-recipes", "h-recipe", "h-cook"].includes(tab)
             ? "h-menu"
-            : role !== "helper" && MORE_GROUP.includes(ui.tab)
-          ? "more"
-          : role === "helper" && H_MORE_GROUP.includes(ui.tab)
-            ? "h-more"
-            : ui.tab;
+            : role !== "helper" && MORE_GROUP.includes(tab)
+              ? "more"
+              : role === "helper" && H_MORE_GROUP.includes(tab)
+                ? "h-more"
+                : tab;
+  if (!navOn(cur) && cur !== "home" && cur !== "h") cur = role === "helper" ? "h-more" : "more";
+  return cur;
+}
+
+function viewDisplayPrefs() {
+  const bucket = role === "helper" ? "helper" : "employer";
+  const row = (group, item) => {
+    const on = (uiPrefs[bucket][group] || {})[item.id] !== false;
+    return `<label class="switch-field">
+      <span>${tr(item.labelKey)}</span>
+      <span class="switch"><input type="checkbox" data-action="ui-pref" data-group="${group}" data-key="${item.id}" ${on ? "checked" : ""}><span></span></span>
+    </label>`;
+  };
+  return `
+    <div class="card prefs-card">
+      <div class="title">${tr("prefs.title")}</div>
+      <p class="tiny muted" style="margin:0.3rem 0 0.2rem">${tr("prefs.lede")}</p>
+      <h2 class="prefs-h">${tr("prefs.nav")}</h2>
+      <p class="tiny muted" style="margin:0 0 0.2rem">${tr("prefs.nav.hint")}</p>
+      ${UI_NAV[bucket].map((item) => row("nav", item)).join("")}
+      <h2 class="prefs-h">${tr("prefs.home")}</h2>
+      <p class="tiny muted" style="margin:0 0 0.2rem">${tr("prefs.home.hint")}</p>
+      ${UI_HOME[bucket].map((item) => row("home", item)).join("")}
+    </div>`;
+}
+
+function sidebar() {
+  if (NAV_HIDDEN.includes(ui.tab)) return "";
+  const items = visibleNavItems();
+  const cur = navCurrentId(ui.tab);
   const home = role === "helper" ? "h" : "home";
   return `
     <aside class="sidebar" aria-label="${tr("aria.mainTabs")}">
@@ -618,22 +668,15 @@ function sidebar() {
 function tabbar() {
   const hidden = ["role", "onboard", "helper-new", "helper-edit", "h-enter"];
   if (hidden.includes(ui.tab)) return "";
-  const tabs = role === "helper" ? HELPER_TABS : EMPLOYER_TABS;
+  const tabs = (role === "helper" ? HELPER_TABS : EMPLOYER_TABS).filter((t) => navOn(t.id));
   const count = role === "employer" ? badgeCount() : 0;
-  const moreIds = role === "helper"
-    ? ["h-more", "h-pay", "h-remind", "h-rights", "h-shop", "h-shop-detail", "h-menu", "h-recipes", "h-recipe", "h-cook"]
-    : ["more", "guide", "backup", "pay", "remind", "share", "shop", "shop-detail", "menu", "recipes", "recipe", "cook"];
+  const cur = navCurrentId(ui.tab);
   return `
-    <nav class="tabbar" aria-label="${tr("aria.mainTabs")}">
+    <nav class="tabbar" aria-label="${tr("aria.mainTabs")}" style="--tab-cols:${Math.max(tabs.length, 2)}">
       ${tabs
         .map((t) => {
-          const current =
-            ui.tab === t.id ||
-            (t.id === "more" && moreIds.includes(ui.tab) && role === "employer") ||
-            (t.id === "h-more" && moreIds.includes(ui.tab) && role === "helper") ||
-            (t.id === "leave" && ui.tab === "leave") ||
-            (t.id === "h" && ui.tab === "h");
-          const badge = t.id === "more" && count ? `<span class="badge">${count > 9 ? "9+" : count}</span>` : "";
+          const current = cur === t.id || ui.tab === t.id;
+          const badge = (t.id === "more" || t.id === "h-more") && count ? `<span class="badge">${count > 9 ? "9+" : count}</span>` : "";
           return `<button class="tab-btn" type="button" data-go="${t.id}" aria-current="${current ? "page" : "false"}">
             <span class="icon-wrap">${icon(t.icon, { size: 22 })}${badge}</span>
             ${tr(t.labelKey)}
@@ -967,20 +1010,53 @@ function viewHome() {
   const contractFoot =
     cs.daysLeft == null ? tr("rail.needDates") : h.contractEnd ? tr("home.stat.contractTo", { date: formatDate(h.contractEnd) }) : "";
 
+  const helperPanel = homeOn("helper")
+    ? `<div class="panel">
+        <div class="panel-title"><h2>${tr("home.panel.helper")}</h2><button class="btn secondary small" type="button" data-go="helper-edit">${tr("home.panel.view")}</button></div>
+        <div class="profile">
+          <div class="profile-img" aria-hidden="true">${escapeHtml(initialOf(h.name))}</div>
+          <div class="profile-info">
+            <strong>${escapeHtml(h.name)}</strong>
+            <div>${nationalityLabel(h.nationality)}${start ? `　·　${tr("home.panel.since", { date: formatDate(start) })}` : ""}</div>
+          </div>
+          <span class="status-pill ${pillClass}">${cs.label}</span>
+        </div>
+        ${detailRow(tr("home.row.contract"), `${start ? formatDate(start) : "—"} — ${h.contractEnd ? formatDate(h.contractEnd) : "—"}`)}
+        ${detailRow(tr("form.wage"), formatMoney(h.wage))}
+        ${detailRow(tr("home.row.food"), h.foodProvided ? tr("home.row.foodFree") : tr("home.row.foodAllow", { amount: formatMoney(h.foodAllowance) }))}
+        ${detailRow(tr("leave.pane.rest"), restValue)}
+        ${detailRow(tr("home.paidStart"), paidFrom ? formatDate(paidFrom) : "—")}
+        ${h.visaExpiry ? detailRow(tr("home.row.visa"), formatDate(h.visaExpiry)) : ""}
+        ${h.passportExpiry ? detailRow(tr("home.row.passport"), formatDate(h.passportExpiry)) : ""}
+      </div>`
+    : "";
+  const remindPanel = homeOn("reminders")
+    ? `<div class="panel">
+        <div class="panel-title"><h2>${tr("home.reminders")}</h2><button class="linkish" type="button" data-go="remind">${tr("common.all")}</button></div>
+        ${timelineHtml(reminders.slice(0, 4), "remind")}
+      </div>`
+    : "";
+
   return `
     ${helperSwitcher()}
     ${installTip()}
-    <section class="welcome">
+    ${
+      homeOn("welcome")
+        ? `<section class="welcome">
       <div>
         <div class="eyebrow">${tr(greetingKey())} · ${tr("home.eyebrow")}</div>
         <h1 class="screen-title">${escapeHtml(h.name)}</h1>
         <p class="lede">${nationalityLabel(h.nationality)}　${restValue}　${tr("home.monthlyWage")} ${formatMoney(h.wage)}</p>
       </div>
       <button class="btn" type="button" data-go="helper-edit">${icon("plus", { size: 16 })}${tr("common.editData")}</button>
-    </section>
-    ${sendUpdateCard("home")}
+    </section>`
+        : ""
+    }
+    ${homeOn("update") ? sendUpdateCard("home") : ""}
 
-    <section class="stat-grid">
+    ${
+      homeOn("stats")
+        ? `<section class="stat-grid">
       ${statCard({ label: tr("home.stat.contract"), ic: "clock", value: contractValue, unit: contractUnit, foot: contractFoot })}
       ${statCard({
         label: tr("home.stat.annual"),
@@ -1000,38 +1076,19 @@ function viewHome() {
         footClass: nextHoliday ? "green" : "",
         pane: "holidays",
       })}
-    </section>
+    </section>`
+        : ""
+    }
 
-    <section class="grid2">
-      <div class="panel">
-        <div class="panel-title"><h2>${tr("home.panel.helper")}</h2><button class="btn secondary small" type="button" data-go="helper-edit">${tr("home.panel.view")}</button></div>
-        <div class="profile">
-          <div class="profile-img" aria-hidden="true">${escapeHtml(initialOf(h.name))}</div>
-          <div class="profile-info">
-            <strong>${escapeHtml(h.name)}</strong>
-            <div>${nationalityLabel(h.nationality)}${start ? `　·　${tr("home.panel.since", { date: formatDate(start) })}` : ""}</div>
-          </div>
-          <span class="status-pill ${pillClass}">${cs.label}</span>
-        </div>
-        ${detailRow(tr("home.row.contract"), `${start ? formatDate(start) : "—"} — ${h.contractEnd ? formatDate(h.contractEnd) : "—"}`)}
-        ${detailRow(tr("form.wage"), formatMoney(h.wage))}
-        ${detailRow(tr("home.row.food"), h.foodProvided ? tr("home.row.foodFree") : tr("home.row.foodAllow", { amount: formatMoney(h.foodAllowance) }))}
-        ${detailRow(tr("leave.pane.rest"), restValue)}
-        ${detailRow(tr("home.paidStart"), paidFrom ? formatDate(paidFrom) : "—")}
-        ${h.visaExpiry ? detailRow(tr("home.row.visa"), formatDate(h.visaExpiry)) : ""}
-        ${h.passportExpiry ? detailRow(tr("home.row.passport"), formatDate(h.passportExpiry)) : ""}
-      </div>
-      <div class="panel">
-        <div class="panel-title"><h2>${tr("home.reminders")}</h2><button class="linkish" type="button" data-go="remind">${tr("common.all")}</button></div>
-        ${timelineHtml(reminders.slice(0, 4), "remind")}
-      </div>
-    </section>
+    ${helperPanel || remindPanel ? `<section class="${helperPanel && remindPanel ? "grid2" : ""}">${helperPanel}${remindPanel}</section>` : ""}
 
-    ${menuHomeCard()}
+    ${homeOn("menu") ? menuHomeCard() : ""}
 
-    ${idDocsPanel(h, "stored")}
+    ${homeOn("docs") ? idDocsPanel(h, "stored") : ""}
 
-    <section class="panel">
+    ${
+      homeOn("holidays")
+        ? `<section class="panel">
       <div class="panel-title">
         <div><h2>${tr("home.holidays.title", { year })}</h2><span class="sub">${tr("home.holidays.sub")}</span></div>
         <div class="year-bar">
@@ -1040,17 +1097,27 @@ function viewHome() {
         </div>
       </div>
       ${holidayTiles(yearList)}
-    </section>
+    </section>`
+        : ""
+    }
 
-    <section class="section">
+    ${
+      homeOn("entries")
+        ? `<section class="section">
       <div class="section-head"><h2>${tr("home.tellHelper")}</h2></div>
       ${entryCards(h, "")}
-    </section>
+    </section>`
+        : ""
+    }
 
-    <div class="btn-row">
+    ${
+      homeOn("actions")
+        ? `<div class="btn-row">
       <button class="btn" type="button" data-go="share">${tr("share.generate")}</button>
       <button class="btn secondary" type="button" data-go="helper-edit">${tr("common.editData")}</button>
-    </div>
+    </div>`
+        : ""
+    }
     ${disclaimer()}
   `;
 }
@@ -2387,6 +2454,7 @@ function viewMore() {
     ${helperSwitcher()}
     <h1 class="screen-title">${tr("tab.more")}</h1>
     <div class="card">
+      <button class="row" type="button" data-go="leave"><div class="grow"><div class="title">${tr("tab.leave")}</div><div class="sub">${tr("more.leave.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="pay"><div class="grow"><div class="title">${tr("more.pay")}</div><div class="sub">${tr("more.pay.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="remind"><div class="grow"><div class="title">${tr("home.reminders")}</div><div class="sub">${tr("more.remind.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="tasks"><div class="grow"><div class="title">${tr("tab.tasks")}</div><div class="sub">${tr("more.tasks.sub")}</div></div>${icon("chevron")}</button>
@@ -2409,6 +2477,7 @@ function viewMore() {
       <div class="title">${tr("lang.label")}</div>
       ${langSwitch()}
     </div>
+    ${viewDisplayPrefs()}
     ${disclaimer()}
   `;
 }
@@ -2631,7 +2700,9 @@ function viewHelperHome() {
   const contractValue = cs.daysLeft == null ? "—" : cs.daysLeft < 0 ? tr("home.stat.ended") : String(cs.daysLeft);
   const contractUnit = cs.daysLeft != null && cs.daysLeft >= 0 ? tr("unit.d") : "";
   return `
-    <section class="welcome">
+    ${
+      homeOn("welcome")
+        ? `<section class="welcome">
       <div>
         <div class="eyebrow">${tr(greetingKey())} · ${tr("header.helperView")}</div>
         <h1 class="screen-title">${escapeHtml(h.name)}</h1>
@@ -2639,8 +2710,12 @@ function viewHelperHome() {
         ${p.generatedAt ? `<p class="last-updated" data-role="last-updated">${helperSession?.updatedAt && Date.now() - Date.parse(helperSession.updatedAt) < 864e5 ? `<span class="su-badge ok">✓ ${tr("update.helper.badge")}</span> ` : ""}${tr("update.helper.last", { when: escapeHtml(fmtDateTime(p.generatedAt)) })}</p>` : ""}
       </div>
       <span class="status-pill ${pillClass}">${cs.label}</span>
-    </section>
-    <section class="stat-grid">
+    </section>`
+        : ""
+    }
+    ${
+      homeOn("stats")
+        ? `<section class="stat-grid">
       ${statCard({
         label: tr("home.stat.contract"),
         ic: "clock",
@@ -2658,18 +2733,30 @@ function viewHelperHome() {
       })}
       ${statCard({ label: tr("leave.pane.rest"), ic: "stamp", value: restValue, foot: "", go: "h-leave" })}
       ${statCard({ label: tr("home.paidStart"), ic: "calendar", value: paidFrom ? formatDate(paidFrom, { short: true }) : "—", foot: "" })}
-    </section>
-    <section class="section">
+    </section>`
+        : ""
+    }
+    ${
+      homeOn("entries")
+        ? `<section class="section">
       <div class="section-head"><h2>${tr("hhome.fromEmployer")}</h2></div>
       ${entryCards(h, "h-")}
-    </section>
-    <section class="panel" style="margin-top:1rem">
+    </section>`
+        : ""
+    }
+    ${
+      homeOn("reminders")
+        ? `<section class="panel" style="margin-top:1rem">
       <div class="panel-title"><h2>${tr("home.reminders")}</h2><button class="linkish" type="button" data-go="h-remind">${tr("common.all")}</button></div>
       ${timelineHtml(reminders, "h-remind")}
-    </section>
-    ${menuHomeCard()}
-    ${idDocsPanel(h, "session")}
-    <div class="card" style="margin-top:1rem">
+    </section>`
+        : ""
+    }
+    ${homeOn("menu") ? menuHomeCard() : ""}
+    ${homeOn("docs") ? idDocsPanel(h, "session") : ""}
+    ${
+      homeOn("ack")
+        ? `<div class="card" style="margin-top:1rem">
       <label class="switch-field">
         <span>
           <strong>${tr("hhome.ack")}</strong>
@@ -2680,7 +2767,9 @@ function viewHelperHome() {
           <span></span>
         </span>
       </label>
-    </div>
+    </div>`
+        : ""
+    }
     ${disclaimer()}
   `;
 }
@@ -3024,6 +3113,7 @@ function viewHelperMore() {
   return `
     <h1 class="screen-title">${tr("tab.more")}</h1>
     <div class="card">
+      <button class="row" type="button" data-go="h-leave"><div class="grow"><div class="title">${tr("tab.leave")}</div><div class="sub">${tr("more.leave.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="h-pay"><div class="grow"><div class="title">${tr("pay.title")}</div><div class="sub">${tr("hmore.pay.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="h-remind"><div class="grow"><div class="title">${tr("home.reminders")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="h-tasks"><div class="grow"><div class="title">${tr("tab.tasks")}</div><div class="sub">${tr("more.tasks.sub")}</div></div>${icon("chevron")}</button>
@@ -3040,6 +3130,7 @@ function viewHelperMore() {
       <div class="title">${tr("lang.label")}</div>
       ${langSwitch()}
     </div>
+    ${viewDisplayPrefs()}
     ${disclaimer()}
   `;
 }
@@ -5241,6 +5332,15 @@ async function onClick(ev) {
 async function onChange(ev) {
   const el = ev.target;
   const action = el.getAttribute("data-action");
+  if (action === "ui-pref") {
+    const group = el.getAttribute("data-group");
+    const key = el.getAttribute("data-key");
+    if (group === "nav" || group === "home") {
+      uiPrefs = setUiPref(uiPrefs, role, group, key, el.checked);
+      render();
+    }
+    return;
+  }
   if (action === "list-date") {
     const list = state.shopLists.find((l) => l.id === el.getAttribute("data-list"));
     if (!list || !/^\d{4}-\d{2}-\d{2}$/.test(el.value)) return;
