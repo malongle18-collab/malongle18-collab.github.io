@@ -1,4 +1,4 @@
-import { t } from "./i18n.js?v=9";
+import { t } from "./i18n.js?v=10";
 /** PIN-encrypted helper snapshots for sharing and same-phone unlock. */
 
 const textEnc = new TextEncoder();
@@ -10,6 +10,7 @@ export const SESSION_KEY = "fdh-helper-session-v1";
 export const ACK_KEY = "fdh-helper-acks-v1";
 export const TASK_DONE_KEY = "fdh-helper-task-done-v1";
 export const ROLE_KEY = "fdh-active-role-v1";
+export const PAY_CONSENT_KEY = "fdh-helper-pay-consent-v1";
 
 export function randomPin() {
   const bytes = crypto.getRandomValues(new Uint8Array(4));
@@ -82,7 +83,7 @@ export async function decryptShare(packedB64, pin) {
   }
 }
 
-export function buildSharePayload({ helper, arrangedRestDays, leaveLogs, shStatuses, payments, workTasks, workRules, shopLists, shopItems, priceCatalog }) {
+export function buildSharePayload({ includeDocs = false, docs = null, customReminders = [], menu = null, recipes = null, helper, arrangedRestDays, leaveLogs, shStatuses, payments, workTasks, workRules, shopLists, shopItems, priceCatalog }) {
   const safeHelper = {
     id: helper.id,
     name: helper.name,
@@ -100,6 +101,11 @@ export function buildSharePayload({ helper, arrangedRestDays, leaveLogs, shStatu
     visaExpiry: helper.visaExpiry || "",
     passportExpiry: helper.passportExpiry || "",
   };
+  if (includeDocs) {
+    safeHelper.passportNo = helper.passportNo || "";
+    safeHelper.hkidNo = helper.hkidNo || "";
+    safeHelper.docs = docs || helper.docs || { passport: [], hkid: [] };
+  }
   const hid = helper.id;
   const sh = {};
   Object.entries(shStatuses || {}).forEach(([key, val]) => {
@@ -113,16 +119,27 @@ export function buildSharePayload({ helper, arrangedRestDays, leaveLogs, shStatu
     arrangedRestDays: (arrangedRestDays || []).slice(),
     leaveLogs: (leaveLogs || []).filter((l) => l.helperId === hid).map(({ helperId, ...rest }) => rest),
     shStatuses: sh,
-    payments: (payments || []).filter((p) => p.helperId === hid).map(({ helperId, ...rest }) => rest),
+    payments: (payments || [])
+      .filter((p) => p.helperId === hid)
+      .map(({ helperId, consent, ...rest }) => ({
+        ...rest,
+        consent: consent && consent.status === "confirmed" ? { status: "confirmed", at: consent.at, by: consent.by } : null,
+      })),
     workTasks: (workTasks || []).filter((t) => t.helperId === hid).map(({ helperId, ...rest }) => rest),
     workRules: (workRules || []).filter((r) => r.helperId === hid).map(({ helperId, ...rest }) => rest),
     shopLists: (shopLists || []).filter((l) => l.helperId === hid).map(({ helperId, ...rest }) => rest),
     shopItems: (shopItems || []).filter((i) => i.helperId === hid).map(({ helperId, ...rest }) => rest),
+    customReminders: (customReminders || [])
+      .filter((r) => r.helperId === hid && !r.doneAt)
+      .map((r) => ({ id: r.id, title: r.title, date: r.date, repeat: r.repeat, note: r.note || "" })),
+    menu: menu || undefined,
+    recipes: recipes || undefined,
     priceCatalog: (priceCatalog || []).map((c) => ({
       key: c.key,
       name: c.name,
       lastPrice: c.lastPrice,
       lastPaidOn: c.lastPaidOn,
+      history: (c.history || []).slice(-8).map((e) => ({ price: e.price, date: e.date, place: e.place || "" })),
     })),
   };
 }
@@ -153,7 +170,13 @@ export function loadJson(key, fallback) {
 }
 
 export function saveJson(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (err) {
+    console.warn("Could not save", key, err);
+    return false;
+  }
 }
 
 export function loadInbox() {
@@ -224,6 +247,39 @@ export function saveRole(role) {
 }
 
 const RETURN_PREFIX = "r";
+
+/** Helper-side record of pay confirmations: { [shareId]: { [payId]: ISO time } }. */
+export function payConsentMap(shareId) {
+  const all = loadJson(PAY_CONSENT_KEY, {});
+  return all[shareId] && typeof all[shareId] === "object" ? all[shareId] : {};
+}
+
+export function setPayConsent(shareId, payId, iso) {
+  const all = loadJson(PAY_CONSENT_KEY, {});
+  all[shareId] = { ...(all[shareId] || {}), [payId]: iso };
+  return saveJson(PAY_CONSENT_KEY, all);
+}
+
+/** Return code the helper sends back to the employer (no server needed). */
+export function buildPayReturnCode(shareId, map) {
+  const items = Object.entries(map || {}).map(([id, at]) => ({ id, at }));
+  const payload = { kind: "pay-consent", v: 1, shareId, items };
+  return `${RETURN_PREFIX}1.${bytesToB64url(textEnc.encode(JSON.stringify(payload)))}`;
+}
+
+export function parsePayReturnCode(text) {
+  const re = new RegExp(`(?:^|[^A-Za-z0-9_-])${RETURN_PREFIX}1\\.([A-Za-z0-9_-]+)`);
+  const m = String(text || "").match(re) || String(text || "").replace(/\s+/g, "").match(new RegExp(`${RETURN_PREFIX}1\\.([A-Za-z0-9_-]+)`));
+  if (!m) throw new Error(t("err.returnFormat"));
+  let obj;
+  try {
+    obj = JSON.parse(textDec.decode(b64urlToBytes(m[1])));
+  } catch {
+    throw new Error(t("err.returnFormat"));
+  }
+  if (!obj || obj.kind !== "pay-consent" || !obj.shareId || !Array.isArray(obj.items)) throw new Error(t("err.returnFormat"));
+  return obj;
+}
 
 /** Resize and JPEG-compress a picked/captured image for local storage and share. */
 export async function compressImageFile(file, { maxSize = 720, quality = 0.72 } = {}) {

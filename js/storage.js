@@ -1,6 +1,9 @@
-import { getLang, t } from "./i18n.js?v=9";
-import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=9";
-import { defaultContractEnd } from "./rules.js?v=9";
+import { getLang, t } from "./i18n.js?v=10";
+import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=10";
+import { cleanIdNumber, normalizeDocs } from "./docs.js?v=10";
+import { defaultContractEnd } from "./rules.js?v=10";
+import { todayISO } from "./dates.js?v=10";
+import { emptyMenu, normalizeMenu, normalizeRecipes } from "./menu.js?v=10";
 
 export const STORAGE_KEY = "fdh-employer-v1";
 
@@ -28,6 +31,9 @@ export function blankHelper(overrides = {}) {
     dob: "",
     visaExpiry: "",
     passportExpiry: "",
+    passportNo: "",
+    hkidNo: "",
+    docs: { passport: [], hkid: [] },
     winterChoice: "christmas",
     grantGeneralHolidays: false,
     createdAt: new Date().toISOString(),
@@ -58,7 +64,10 @@ export function emptyState() {
     workRules: [],
     shopLists: [],
     shopItems: [],
+    customReminders: [],
     priceCatalog: [],
+    menu: emptyMenu(),
+    recipes: [],
     helperAccess: {},
     settings: {
       notifications: false,
@@ -69,22 +78,48 @@ export function emptyState() {
 function migrate(raw) {
   const state = { ...emptyState(), ...(raw || {}) };
   state.version = DATA_VERSION;
-  state.helpers = (Array.isArray(state.helpers) ? state.helpers : []).filter((h) => h && typeof h === "object" && h.id);
+  state.helpers = (Array.isArray(state.helpers) ? state.helpers : [])
+    .filter((h) => h && typeof h === "object" && h.id)
+    .map((h) => ({
+      ...h,
+      passportNo: cleanIdNumber(h.passportNo),
+      hkidNo: cleanIdNumber(h.hkidNo),
+      docs: normalizeDocs(h.docs),
+    }));
   state.leaveLogs = Array.isArray(state.leaveLogs) ? state.leaveLogs : [];
-  state.payments = Array.isArray(state.payments) ? state.payments : [];
+  state.payments = (Array.isArray(state.payments) ? state.payments : [])
+    .filter((p) => p && typeof p === "object" && p.id)
+    .map((p) => ({ ...p, method: String(p.method || ""), consent: normalizeConsent(p.consent) }));
   state.shStatuses = state.shStatuses && typeof state.shStatuses === "object" ? state.shStatuses : {};
   state.reminderState =
     state.reminderState && typeof state.reminderState === "object" ? state.reminderState : {};
   state.guideChecks =
     state.guideChecks && typeof state.guideChecks === "object" ? state.guideChecks : {};
-  state.settings = { notifications: false, ...(state.settings || {}) };
+  state.settings = { notifications: false, employerName: "", ...(state.settings || {}) };
   state.arrangedRestDays =
     state.arrangedRestDays && typeof state.arrangedRestDays === "object" ? state.arrangedRestDays : {};
   state.workTasks = Array.isArray(state.workTasks) ? state.workTasks : [];
   state.workRules = Array.isArray(state.workRules) ? state.workRules : [];
-  state.shopLists = Array.isArray(state.shopLists) ? state.shopLists : [];
+  state.shopLists = (Array.isArray(state.shopLists) ? state.shopLists : [])
+    .filter((l) => l && typeof l === "object" && l.id)
+    .map((l) => ({ ...l, date: listDate(l) || todayISO() }));
   state.shopItems = Array.isArray(state.shopItems) ? state.shopItems : [];
-  state.priceCatalog = Array.isArray(state.priceCatalog) ? state.priceCatalog : [];
+  state.priceCatalog = normalizeCatalog(state.priceCatalog);
+  state.recipes = normalizeRecipes(state.recipes);
+  state.menu = normalizeMenu(state.menu);
+  state.customReminders = (Array.isArray(state.customReminders) ? state.customReminders : [])
+    .filter((r) => r && typeof r === "object" && r.id && String(r.title || "").trim())
+    .map((r) => ({
+      id: String(r.id),
+      helperId: String(r.helperId || ""),
+      title: String(r.title).trim().slice(0, 80),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(r.date || "")) ? r.date : todayISO(),
+      repeat: ["monthly", "yearly"].includes(r.repeat) ? r.repeat : "none",
+      anchorDay: Number(r.anchorDay) || Number(String(r.date || "").slice(8, 10)) || 1,
+      note: String(r.note || "").slice(0, 400),
+      doneAt: String(r.doneAt || ""),
+      createdAt: String(r.createdAt || ""),
+    }));
   state.helperAccess =
     state.helperAccess && typeof state.helperAccess === "object" ? state.helperAccess : {};
   if (state.currentHelperId && !state.helpers.some((h) => h.id === state.currentHelperId)) {
@@ -194,9 +229,18 @@ export function newPayment(partial) {
     adjustments: 0,
     note: "",
     paidOn: "",
+    method: "",
+    consent: null,
     createdAt: new Date().toISOString(),
     ...partial,
   };
+}
+
+export function normalizeConsent(c) {
+  if (!c || typeof c !== "object" || c.status !== "confirmed") return null;
+  const sig = typeof c.signature === "string" && c.signature.startsWith("data:image/") ? c.signature : "";
+  const by = ["helper-code", "helper-device", "in-person"].includes(c.by) ? c.by : "in-person";
+  return { status: "confirmed", at: String(c.at || ""), by, signature: sig };
 }
 
 
@@ -247,8 +291,57 @@ export function normalizeItemName(name) {
   return String(name || "").trim().replace(/\s+/g, " ");
 }
 
+/** Name key for price history: trim, collapse spaces, full/half-width (NFKC), case-insensitive. */
 export function catalogKey(name) {
-  return normalizeItemName(name).toLowerCase();
+  let n = String(name || "");
+  try {
+    n = n.normalize("NFKC");
+  } catch {
+    /* old engines */
+  }
+  return n.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function localDateOf(iso) {
+  const d = new Date(iso);
+  if (!iso || Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Shopping date of a list (explicit date, else completed/created day). */
+export function listDate(list) {
+  if (list && /^\d{4}-\d{2}-\d{2}$/.test(String(list.date || ""))) return list.date;
+  return localDateOf(list?.completedAt) || localDateOf(list?.createdAt) || "";
+}
+
+/** Latest-dated entry of a price history row. */
+function refreshLast(row) {
+  const hist = (row.history || []).filter((e) => Number.isFinite(Number(e.price)));
+  hist.sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  row.history = hist.slice(-30);
+  const last = row.history[row.history.length - 1];
+  if (last) {
+    row.lastPrice = Number(last.price);
+    row.lastPaidOn = last.date || "";
+  }
+  return row;
+}
+
+/** Normalise stored price catalog: new keys, merged duplicates, valid entries. */
+export function normalizeCatalog(list) {
+  const map = new Map();
+  for (const c of Array.isArray(list) ? list : []) {
+    if (!c || typeof c !== "object") continue;
+    const key = catalogKey(c.name || c.key);
+    if (!key) continue;
+    const hist = Array.isArray(c.history) ? c.history.slice() : [];
+    if (!hist.length && Number.isFinite(Number(c.lastPrice))) hist.push({ price: Number(c.lastPrice), date: c.lastPaidOn || "", place: "" });
+    const row = map.get(key) || { key, name: normalizeItemName(c.name || c.key), lastPrice: 0, lastPaidOn: "", history: [] };
+    row.history.push(...hist.map((e) => ({ price: Number(e.price), date: String(e.date || ""), place: String(e.place || ""), listId: String(e.listId || ""), itemId: String(e.itemId || "") })));
+    map.set(key, row);
+  }
+  return Array.from(map.values()).map(refreshLast);
 }
 
 export function findCatalog(state, name) {
@@ -257,24 +350,47 @@ export function findCatalog(state, name) {
   return (state.priceCatalog || []).find((c) => c.key === k) || null;
 }
 
-export function recordCatalogPrice(state, name, price, whenISO, place = "") {
+export function recordCatalogPrice(state, name, price, whenISO, place = "", meta = {}) {
   const k = catalogKey(name);
   const amount = Number(price);
   if (!k || !Number.isFinite(amount)) return null;
-  const entry = { price: amount, date: whenISO, place: place || "" };
+  const entry = { price: amount, date: whenISO || "", place: place || "", listId: meta.listId || "", itemId: meta.itemId || "" };
   const list = Array.isArray(state.priceCatalog) ? state.priceCatalog : [];
   let row = list.find((c) => c.key === k);
   if (!row) {
-    row = { key: k, name: normalizeItemName(name), lastPrice: amount, lastPaidOn: whenISO, history: [entry] };
+    row = { key: k, name: normalizeItemName(name), lastPrice: amount, lastPaidOn: whenISO || "", history: [] };
     list.push(row);
-  } else {
-    row.name = normalizeItemName(name);
-    row.lastPrice = amount;
-    row.lastPaidOn = whenISO;
-    row.history = [...(row.history || []), entry].slice(-20);
   }
+  row.name = normalizeItemName(name);
+  // one entry per item: editing an item's price replaces its earlier entry
+  row.history = (row.history || []).filter((e) => !(entry.itemId && e.itemId === entry.itemId));
+  row.history.push(entry);
+  refreshLast(row);
   state.priceCatalog = list;
   return row;
+}
+
+export function removeCatalogEntry(state, itemId) {
+  if (!itemId) return;
+  state.priceCatalog = (state.priceCatalog || [])
+    .map((c) => ({ ...c, history: (c.history || []).filter((e) => e.itemId !== itemId) }))
+    .filter((c) => c.history.length);
+  state.priceCatalog = normalizeCatalog(state.priceCatalog);
+}
+
+export function newCustomReminder(partial = {}) {
+  return {
+    id: uid("rem"),
+    helperId: "",
+    title: "",
+    date: todayISO(),
+    repeat: "none",
+    anchorDay: 0,
+    note: "",
+    doneAt: "",
+    createdAt: new Date().toISOString(),
+    ...partial,
+  };
 }
 
 export function newShopList(partial = {}) {
@@ -285,6 +401,7 @@ export function newShopList(partial = {}) {
     place: "market",
     status: "open",
     note: "",
+    date: todayISO(),
     createdAt: new Date().toISOString(),
     completedAt: "",
     ...partial,
