@@ -1,5 +1,5 @@
-import { DATA_VERSION, DEMO_HELPER } from "./data.js";
-import { defaultContractEnd } from "./rules.js";
+import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=7";
+import { defaultContractEnd } from "./rules.js?v=7";
 
 export const STORAGE_KEY = "fdh-employer-v1";
 
