@@ -3,7 +3,7 @@ import {
   GENERAL_HOLIDAYS,
   REST_DAY_ARRANGED,
   STATUTORY_HOLIDAYS,
-} from "./data.js";
+} from "./data.js?v=7";
 import {
   addDays,
   addMonths,
@@ -11,14 +11,14 @@ import {
   daysBetween,
   daysInMonth,
   parseISO,
-  toISO,
+  toISO as formatISO,
   weekday,
-} from "./dates.js";
+} from "./dates.js?v=7";
 
 /** Standard ID 407 term is two years. Default end date is the day before the 2-year anniversary. */
 export function defaultContractEnd(startISO) {
   if (!startISO) return "";
-  return toISO(addDays(addYears(startISO, 2), -1));
+  return formatISO(addDays(addYears(startISO, 2), -1));
 }
 
 /**
@@ -29,13 +29,13 @@ export function defaultContractEnd(startISO) {
  */
 export function paidStatutoryStart(startISO) {
   if (!startISO) return "";
-  return toISO(addMonths(startISO, 3));
+  return formatISO(addMonths(startISO, 3));
 }
 
 /** Paid annual leave vests after 12 months with the same employer. */
 export function annualLeaveVestDate(startISO) {
   if (!startISO) return "";
-  return toISO(addMonths(startISO, 12));
+  return formatISO(addMonths(startISO, 12));
 }
 
 export function yearsOfServiceCompleted(startISO, onISO) {
@@ -43,7 +43,7 @@ export function yearsOfServiceCompleted(startISO, onISO) {
   let years = 0;
   let cursor = startISO;
   while (true) {
-    const next = toISO(addYears(cursor, 1));
+    const next = formatISO(addYears(cursor, 1));
     if (next > onISO) break;
     years += 1;
     cursor = next;
@@ -65,7 +65,7 @@ export function vestedAnnualLeaveAsOf(startISO, onISO) {
   const grants = [];
   for (let y = 1; y <= years; y++) {
     const days = annualLeaveDaysForYear(y);
-    const vest = toISO(addYears(startISO, y));
+    const vest = formatISO(addYears(startISO, y));
     grants.push({ serviceYear: y, days, vestDate: vest });
     total += days;
   }
@@ -74,8 +74,8 @@ export function vestedAnnualLeaveAsOf(startISO, onISO) {
 
 export function currentLeaveYear(startISO, onISO) {
   const years = yearsOfServiceCompleted(startISO, onISO);
-  const yearStart = toISO(addYears(startISO, years));
-  const yearEnd = toISO(addDays(addYears(startISO, years + 1), -1));
+  const yearStart = formatISO(addYears(startISO, years));
+  const yearEnd = formatISO(addDays(addYears(startISO, years + 1), -1));
   return { index: years + 1, start: yearStart, end: yearEnd };
 }
 
@@ -135,11 +135,11 @@ export function suggestedAlternativeDate(holidayISO, restDay, yearHolidays) {
   const blocked = new Set(yearHolidays.map((h) => h.date));
   let cursor = addDays(holidayISO, 1);
   for (let i = 0; i < 14; i++) {
-    const iso = toISO(cursor);
+    const iso = formatISO(cursor);
     if (weekday(iso) !== Number(restDay) && !blocked.has(iso)) return iso;
     cursor = addDays(cursor, 1);
   }
-  return toISO(addDays(holidayISO, 1));
+  return formatISO(addDays(holidayISO, 1));
 }
 
 export function inEmployment(helper, iso) {
@@ -202,7 +202,7 @@ export function upcomingRestDays(restDay, fromISO, count = 8) {
   const out = [];
   let cursor = parseISO(fromISO);
   for (let i = 0; i < 60 && out.length < count; i++) {
-    if (cursor.getDay() === rd) out.push(toISO(cursor));
+    if (cursor.getDay() === rd) out.push(formatISO(cursor));
     cursor = addDays(cursor, 1);
   }
   return out;
@@ -247,7 +247,7 @@ export function restDayGaps(helper, arrangedDates, fromISO, untilISO) {
   const last = parseISO(to);
   if (!cursor || !last) return [];
   while (cursor <= last) {
-    const iso = toISO(cursor);
+    const iso = formatISO(cursor);
     if (isRestDayOn(helper, iso, arrangedDates)) rest.add(iso);
     cursor = addDays(cursor, 1);
   }
@@ -256,11 +256,11 @@ export function restDayGaps(helper, arrangedDates, fromISO, untilISO) {
   let windowStart = parseISO(from);
   const lastStart = addDays(to, -6);
   while (windowStart <= lastStart) {
-    const startISO = toISO(windowStart);
-    const endISO = toISO(addDays(windowStart, 6));
+    const startISO = formatISO(windowStart);
+    const endISO = formatISO(addDays(windowStart, 6));
     let hasRest = false;
     for (let i = 0; i < 7; i++) {
-      if (rest.has(toISO(addDays(windowStart, i)))) {
+      if (rest.has(formatISO(addDays(windowStart, i)))) {
         hasRest = true;
         break;
       }
@@ -300,11 +300,11 @@ export function suggestedAlternativeDateFor(holidayISO, helper, yearHolidays, ar
   const blocked = new Set((yearHolidays || []).map((h) => h.date));
   let cursor = addDays(holidayISO, 1);
   for (let i = 0; i < 14; i++) {
-    const iso = toISO(cursor);
+    const iso = formatISO(cursor);
     if (!isRestDayOn(helper, iso, arrangedDates) && !blocked.has(iso)) return iso;
     cursor = addDays(cursor, 1);
   }
-  return toISO(addDays(holidayISO, 1));
+  return formatISO(addDays(holidayISO, 1));
 }
 
 /** Whether a recurring work task applies on a given calendar date. */

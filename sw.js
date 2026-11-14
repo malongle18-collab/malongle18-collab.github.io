@@ -1,18 +1,25 @@
-const CACHE = "fdh-household-pages-v6";
+const CACHE = "fdh-household-pages-v7";
 const ASSETS = [
   "./",
   "./index.html",
   "./css/app.css",
-  "./css/app.css?v=6",
+  "./css/app.css?v=7",
   "./js/app.js",
-  "./js/app.js?v=6",
+  "./js/app.js?v=7",
   "./js/data.js",
+  "./js/data.js?v=7",
   "./js/dates.js",
+  "./js/dates.js?v=7",
   "./js/rules.js",
+  "./js/rules.js?v=7",
   "./js/storage.js",
+  "./js/storage.js?v=7",
   "./js/reminders.js",
+  "./js/reminders.js?v=7",
   "./js/icons.js",
+  "./js/icons.js?v=7",
   "./js/share.js",
+  "./js/share.js?v=7",
   "./manifest.webmanifest",
   "./icons/favicon.svg"
 ];

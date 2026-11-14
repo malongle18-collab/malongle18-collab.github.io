@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js";
+} from "./data.js?v=7";
 import {
   addDays,
   daysBetween,
@@ -26,14 +26,14 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js";
-import { escapeHtml, icon } from "./icons.js";
+} from "./dates.js?v=7";
+import { escapeHtml, icon } from "./icons.js?v=7";
 import {
   buildReminders,
   isReminderVisible,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js";
+} from "./reminders.js?v=7";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -56,7 +56,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js";
+} from "./rules.js?v=7";
 import {
   arrangedRestList,
   currentHelper,
@@ -78,7 +78,7 @@ import {
   shKey,
   toggleArrangedRestDay,
   uid,
-} from "./storage.js";
+} from "./storage.js?v=7";
 import {
   ACK_KEY,
   buildSharePayload,
@@ -100,7 +100,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js";
+} from "./share.js?v=7";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
