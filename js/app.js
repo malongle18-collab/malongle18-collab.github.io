@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=17";
+} from "./data.js?v=18";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=17";
-import { escapeHtml, icon } from "./icons.js?v=17";
+} from "./dates.js?v=18";
+import { escapeHtml, icon } from "./icons.js?v=18";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=17";
+} from "./reminders.js?v=18";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=17";
+} from "./rules.js?v=18";
 import {
   arrangedRestList,
   currentHelper,
@@ -102,7 +102,7 @@ import {
   moveNavTab,
   isShopGroupCollapsed,
   setShopGroupCollapsed,
-} from "./storage.js?v=17";
+} from "./storage.js?v=18";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -128,7 +128,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=17";
+} from "./share.js?v=18";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -143,7 +143,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=17";
+} from "./docs.js?v=18";
 import {
   CATEGORIES,
   DIET_KEYS,
@@ -154,6 +154,9 @@ import {
   SHARE_MENU_PAST_DAYS,
   aggregateIngredients,
   allRecipes,
+  isLibraryRecipeId,
+  libraryOverrideId,
+  ownUserRecipes,
   copyDay,
   dayCount,
   dayDishes,
@@ -193,9 +196,9 @@ import {
   urlHost,
   weekDates,
   webSearchUrls,
-} from "./menu.js?v=17";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=17";
-import { initSwipe } from "./swipe-delete.js?v=17";
+} from "./menu.js?v=18";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=18";
+import { initSwipe } from "./swipe-delete.js?v=18";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -257,6 +260,7 @@ const ui = {
   recipePhotoReplace: null,
   recipeDraft: null,
   slotArm: "",
+  recipeRestoreArm: "",
 };
 
 function today() {
@@ -3742,7 +3746,7 @@ function recipeCards(list, ro) {
         <span class="recipe-thumb">${recipePhotosOf(r)[0] ? `<img src="${recipePhotosOf(r)[0]}" alt="" loading="lazy">` : icon("utensils", { size: 26 })}<b class="recipe-no">#${r.no}</b>${r.builtin ? "" : `<i class="mine-dot" title="${tr("recipe.src.mine")}"></i>`}</span>
         <span class="recipe-meta"><strong>${recipeNameHtml(r)}</strong>
           <span class="recipe-sub">${escapeHtml(recipeMeta(r))}</span>
-          <span class="recipe-tags">${dietBadges(r)}${r.sourceUrl ? `<em class="dtag d-web">${tr("recipe.web.badge")}</em>` : ""}</span>
+          <span class="recipe-tags">${dietBadges(r)}${r.overrideOf ? `<em class="dtag d-edited">${tr("recipe.edited")}</em>` : ""}${r.sourceUrl ? `<em class="dtag d-web">${tr("recipe.web.badge")}</em>` : ""}</span>
           ${conflictBadge(r)}${menu ? recentTag(recipeEatenDaysAgo(menu, r.id, t)) : ""}
         </span>
       </button>`;
@@ -3853,7 +3857,7 @@ function viewRecipe() {
     ${back}
     <article class="recipe-detail ${ro ? "is-helper" : ""}">
       ${recipeGalleryHtml(r)}
-      <p class="recipe-id">${tr("recipe.id")} <b>#${r.no}</b>${r.builtin ? ` <span class="tag">${tr("recipe.src.lib")}</span>` : ""}</p>
+      <p class="recipe-id">${tr("recipe.id")} <b>#${r.no}</b>${r.builtin ? ` <span class="tag">${tr("recipe.src.lib")}</span>` : ""}${r.overrideOf ? ` <span class="tag edited">${tr("recipe.edited")}</span>` : ""}</p>
       <h1 class="screen-title" style="margin-top:0.3rem">${recipeNameHtml(r)}</h1>
       <p class="lede" style="margin:0 0 0.4rem">${escapeHtml(recipeMeta(r))}${tr("log.sep")}${tr(`recipe.cat.${r.category}`)}</p>
       <p class="recipe-tags" style="margin:0 0 0.6rem">${dietBadges(r)}${r.tags.map((x) => `<em>${escapeHtml(x)}</em>`).join("")}</p>
@@ -3864,9 +3868,10 @@ function viewRecipe() {
         ${
           ro
             ? ""
-            : `<button class="btn secondary" type="button" data-action="recipe-menu" data-id="${escapeHtml(r.id)}">${tr("recipe.addMenu")}</button>
+            : `<button class="btn" type="button" data-action="recipe-edit" data-id="${escapeHtml(r.id)}">${tr("common.edit")}</button>
+              <button class="btn secondary" type="button" data-action="recipe-menu" data-id="${escapeHtml(r.id)}">${tr("recipe.addMenu")}</button>
               <button class="btn secondary" type="button" data-action="recipe-shop-open" data-id="${escapeHtml(r.id)}">${icon("basket", { size: 16 })}${tr("recipe.addShop")}</button>
-              ${r.builtin ? `<button class="btn secondary" type="button" data-action="recipe-copy" data-id="${escapeHtml(r.id)}">${tr("recipe.copy")}</button>` : `<button class="btn secondary" type="button" data-action="recipe-edit" data-id="${escapeHtml(r.id)}">${tr("common.edit")}</button>`}`
+              ${r.builtin ? `<button class="btn secondary" type="button" data-action="recipe-copy" data-id="${escapeHtml(r.id)}">${tr("recipe.copy")}</button>` : ""}`
         }
       </div>
       ${r.sourceUrl ? `<p class="source-line"><a class="btn secondary small" href="${escapeHtml(r.sourceUrl)}" target="_blank" rel="noopener noreferrer">${icon("share", { size: 14 })}${tr("recipe.web.original")}</a> <span class="tiny muted">${escapeHtml(urlHost(r.sourceUrl))}</span></p>` : ""}
@@ -3935,8 +3940,8 @@ function dishNameOptions() {
 }
 
 function recipeOptions(selectedId) {
-  const mine = state.recipes;
-  const lib = allRecipes([]).slice();
+  const mine = ownUserRecipes(state.recipes);
+  const lib = allRecipes(state.recipes).filter((r) => r.builtin);
   const opt = (r) => `<option value="${escapeHtml(r.id)}" ${r.id === selectedId ? "selected" : ""}>#${r.no} ${escapeHtml(recipeName(r))}</option>`;
   return `${mine.length ? `<optgroup label="${tr("recipe.src.mine")}">${mine.map(opt).join("")}</optgroup>` : ""}<optgroup label="${tr("recipe.src.lib")}">${lib.map(opt).join("")}</optgroup>`;
 }
@@ -4101,7 +4106,7 @@ function recipePickerHtml() {
       .map(
         (r) => `<label class="pick-row" data-pick-text="${escapeHtml([r.no, r.nameZh, r.nameEn].join(" ").toLowerCase())}">
           <input type="checkbox" name="rpick" value="${escapeHtml(r.id)}">
-          <span><b>#${r.no}</b> ${escapeHtml(recipeName(r))}${recipeNameOther(r) ? `<small>${escapeHtml(recipeNameOther(r))}</small>` : ""}${r.builtin ? "" : `<em class="mine-tag">${tr("recipe.src.mine")}</em>`}</span>
+          <span><b>#${r.no}</b> ${escapeHtml(recipeName(r))}${recipeNameOther(r) ? `<small>${escapeHtml(recipeNameOther(r))}</small>` : ""}${r.builtin ? (r.overrideOf ? `<em class="mine-tag edited-tag">${tr("recipe.edited")}</em>` : "") : `<em class="mine-tag">${tr("recipe.src.mine")}</em>`}</span>
         </label>`
       )
       .join("")}</div>
@@ -4187,7 +4192,7 @@ function menuSheetBody(sheet) {
       <div class="btn-row"><button class="btn" type="button" data-action="slots-done">${tr("menu.slots.done")}</button></div>`;
   }
   if (sheet.type === "recipe") {
-    const r = sheet.id ? state.recipes.find((x) => x.id === sheet.id) : sheet.draft && ui.recipeDraft ? ui.recipeDraft : newRecipe();
+    const r = sheet.id ? allRecipes(state.recipes).find((x) => x.id === sheet.id) : sheet.draft && ui.recipeDraft ? ui.recipeDraft : newRecipe();
     if (!r) return "";
     const ingZh = r.ingredients.map((i) => `${i.zh} ${i.qty}`.trim()).join("\n");
     const ingEn = r.ingredients.map((i) => `${i.en} ${i.qtyEn}`.trim()).join("\n");
@@ -4225,7 +4230,15 @@ function menuSheetBody(sheet) {
         <label class="field"><span>${tr("recipe.f.source")}</span><input name="sourceUrl" type="text" inputmode="url" autocapitalize="none" autocomplete="off" spellcheck="false" maxlength="600" value="${escapeHtml(r.sourceUrl || "")}" placeholder="https://"></label>
         <div class="btn-row">
           <button class="btn" type="submit">${tr("common.save")}</button>
-          ${sheet.id ? `<button class="btn danger" type="button" data-action="recipe-del" data-id="${escapeHtml(r.id)}">${tr("common.delete")}</button>` : ""}
+          ${
+            sheet.id && r.builtin
+              ? r.overrideOf
+                ? `<button class="btn ${ui.recipeRestoreArm === r.id ? "danger" : "secondary"}" type="button" data-action="recipe-restore" data-id="${escapeHtml(r.id)}">${tr(ui.recipeRestoreArm === r.id ? "recipe.restore.confirm" : "recipe.restore")}</button>`
+                : ""
+              : sheet.id
+                ? `<button class="btn danger" type="button" data-action="recipe-del" data-id="${escapeHtml(r.id)}">${tr("common.delete")}</button>`
+                : ""
+          }
         </div>
       </form>`;
   }
@@ -5465,20 +5478,39 @@ async function onClick(ev) {
     return;
   }
   if (role !== "helper" && action === "recipe-edit") {
-    const r = state.recipes.find((x) => x.id === id);
+    const r = allRecipes(state.recipes).find((x) => x.id === id);
+    if (!r) return;
     setRecipePhotos(recipePhotosOf(r));
     ui.recipePhotoReplace = null;
+    ui.recipeRestoreArm = "";
     ui.sheet = { type: "recipe", id };
     render();
     return;
   }
   if (role !== "helper" && action === "recipe-del") {
+    if (isLibraryRecipeId(id)) return;
     state.recipes = state.recipes.filter((r) => r.id !== id);
     save();
     ui.sheet = null;
     ui.recipeId = null;
     toast(tr("recipe.deleted"));
     setTab("recipes");
+    return;
+  }
+  if (role !== "helper" && action === "recipe-restore") {
+    if (!isLibraryRecipeId(id) || !state.recipes.some((r) => libraryOverrideId(r) === id)) return;
+    if (ui.recipeRestoreArm !== id) {
+      ui.recipeRestoreArm = id;
+      render();
+      return;
+    }
+    state.recipes = state.recipes.filter((r) => libraryOverrideId(r) !== id);
+    if (!save()) return;
+    ui.recipeRestoreArm = "";
+    ui.sheet = null;
+    setRecipePhotos([]);
+    ui.recipePhotoReplace = null;
+    toast(tr("recipe.restored"));
     return;
   }
   if (action === "pick-recipe-photo") {
@@ -6358,9 +6390,11 @@ function onSubmit(ev) {
       updatedAt: new Date().toISOString(),
     };
     const prev = state.recipes.slice();
-    const idx = state.recipes.findIndex((r) => r.id === id);
-    if (idx >= 0) state.recipes[idx] = { ...state.recipes[idx], ...fields };
-    else state.recipes.push(newRecipe({ id, no: nextRecipeNo(state.recipes), ...fields }));
+    const lib = isLibraryRecipeId(id);
+    const extra = lib ? { id, overrideOf: id, copyOf: "" } : {};
+    const idx = state.recipes.findIndex((r) => r.id === id || (lib && r.overrideOf === id));
+    if (idx >= 0) state.recipes[idx] = { ...state.recipes[idx], ...fields, ...extra };
+    else state.recipes.push(newRecipe({ id, no: lib ? 0 : nextRecipeNo(state.recipes), ...fields, ...extra }));
     state.recipes = normalizeRecipes(state.recipes);
     if (!save()) {
       state.recipes = prev;

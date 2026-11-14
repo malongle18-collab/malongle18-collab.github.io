@@ -1,7 +1,7 @@
 /** Meal plan (今日餐單) and recipes (菜譜): pure data helpers, no DOM. */
-import { compressImageFile } from "./share.js?v=17";
-import { getLang } from "./i18n.js?v=17";
-import { LIB_RECIPES } from "./recipes-lib.js?v=17";
+import { compressImageFile } from "./share.js?v=18";
+import { getLang } from "./i18n.js?v=18";
+import { LIB_RECIPES } from "./recipes-lib.js?v=18";
 
 export const DEFAULT_SLOT_KEYS = ["breakfast", "lunch", "dinner", "snack"];
 export const MAX_SLOTS = 12;
@@ -17,6 +17,21 @@ export const CONTAINS_KEYS = ["pork", "beef", "alcohol", "fermented"];
 export const DEFAULT_DIET = { noPork: false, noBeef: false, noAlcohol: false, noFermented: false, halalOnly: false, lightOnly: false };
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
 export const MAX_RECIPE_PHOTOS = 6;
+
+const LIB_BY_ID = new Map(LIB_RECIPES.map((r) => [r.id, r]));
+
+/** True when this id belongs to a starter-library recipe. */
+export function isLibraryRecipeId(id) {
+  return LIB_BY_ID.has(String(id || ""));
+}
+
+/** Library id this user record overrides, or "" if it is a personal recipe. */
+export function libraryOverrideId(r) {
+  if (!r) return "";
+  if (isLibraryRecipeId(r.overrideOf)) return String(r.overrideOf);
+  if (isLibraryRecipeId(r.id)) return String(r.id);
+  return "";
+}
 
 export function isRecipePhoto(v) {
   return /^data:image\//.test(String(v || ""));
@@ -75,6 +90,7 @@ export function newRecipe(partial = {}) {
     photo: "",
     photos: [],
     copyOf: "",
+    overrideOf: "",
     sourceUrl: "",
     createdAt: now,
     updatedAt: now,
@@ -149,16 +165,20 @@ export function normalizeRecipes(raw) {
   const seen = new Set();
   const out = [];
   for (const r of Array.isArray(raw) ? raw : []) {
-    if (!r || typeof r !== "object" || !r.id || seen.has(String(r.id))) continue;
+    if (!r || typeof r !== "object" || !r.id) continue;
+    const libId = libraryOverrideId(r);
+    const id = libId || String(r.id);
+    if (!id || seen.has(id)) continue;
     const nameZh = str(r.nameZh != null ? r.nameZh : r.name, 80);
     const nameEn = str(r.nameEn, 80);
     if (!nameZh && !nameEn) continue;
-    seen.add(String(r.id));
+    seen.add(id);
+    const lib = libId ? LIB_BY_ID.get(libId) : null;
     const tips = r.tips && typeof r.tips === "object" ? { zh: String(r.tips.zh || "").slice(0, 800), en: String(r.tips.en || "").slice(0, 800) } : { zh: String(r.notes || "").slice(0, 800), en: "" };
     const diet = (Array.isArray(r.diet) ? r.diet : []).map(String).filter((k) => DIET_KEYS.includes(k));
     out.push({
-      id: String(r.id),
-      no: Number.isInteger(Number(r.no)) && Number(r.no) >= 100 ? Number(r.no) : 0,
+      id,
+      no: lib ? lib.no : Number.isInteger(Number(r.no)) && Number(r.no) >= 100 ? Number(r.no) : 0,
       nameZh,
       nameEn,
       name: nameZh || nameEn,
@@ -174,17 +194,20 @@ export function normalizeRecipes(raw) {
       notes: tips.zh,
       diet: Array.from(new Set(diet)),
       tags: Array.isArray(r.tags) ? splitTags(r.tags.join(",")) : splitTags(r.tags),
-      copyOf: str(r.copyOf, 40),
+      copyOf: lib ? "" : str(r.copyOf, 40),
+      overrideOf: libId || "",
       sourceUrl: normalizeSourceUrl(r.sourceUrl),
       createdAt: String(r.createdAt || ""),
       updatedAt: String(r.updatedAt || r.createdAt || ""),
     });
   }
   // Recipe ID numbers: keep valid ones, give old recipes a stable number in list order (101, 102, ...)
+  // Library overrides always keep the library number and are ignored here.
   const used = new Set(out.map((r) => r.no).filter(Boolean));
   let next = 101;
   const dup = new Set();
   for (const r of out) {
+    if (r.overrideOf) continue;
     if (r.no && dup.has(r.no)) r.no = 0;
     if (r.no) dup.add(r.no);
   }
@@ -198,7 +221,10 @@ export function normalizeRecipes(raw) {
 }
 
 export function nextRecipeNo(userRecipes) {
-  const max = (userRecipes || []).reduce((m, r) => Math.max(m, Number(r.no) || 0), 100);
+  const max = (userRecipes || []).reduce((m, r) => {
+    if (libraryOverrideId(r)) return m;
+    return Math.max(m, Number(r.no) || 0);
+  }, 100);
   return max + 1;
 }
 
@@ -233,9 +259,56 @@ export function recipeNoLabel(r) {
   return `#${r.no}`;
 }
 
-/** Library first, then the household's own recipes. */
+/** Apply a local override onto a library recipe. id / no / builtin stay from the library. */
+export function mergeLibraryOverride(base, override) {
+  const photos = recipePhotosOf(override);
+  return {
+    ...base,
+    nameZh: override.nameZh,
+    nameEn: override.nameEn,
+    name: override.nameZh || override.nameEn || base.name,
+    category: override.category,
+    prepMins: override.prepMins,
+    difficulty: override.difficulty,
+    servings: override.servings,
+    ingredients: override.ingredients,
+    steps: override.steps,
+    tips: override.tips && typeof override.tips === "object" ? override.tips : base.tips,
+    notes: override.notes || (override.tips && override.tips.zh) || base.notes,
+    diet: Array.isArray(override.diet) ? override.diet : base.diet,
+    tags: Array.isArray(override.tags) ? override.tags : base.tags,
+    photo: photos[0] || "",
+    photos,
+    sourceUrl: override.sourceUrl || "",
+    updatedAt: override.updatedAt || base.updatedAt,
+    createdAt: override.createdAt || base.createdAt,
+    id: base.id,
+    no: base.no,
+    builtin: true,
+    overrideOf: base.id,
+    copyOf: "",
+  };
+}
+
+/** Personal recipes only (library overrides are excluded). */
+export function ownUserRecipes(userRecipes) {
+  return (userRecipes || []).filter((r) => !libraryOverrideId(r));
+}
+
+/** Library first (overrides merged in place), then the household's own recipes. */
 export function allRecipes(userRecipes) {
-  return [...LIB_RECIPES, ...(userRecipes || [])];
+  const overrides = new Map();
+  const own = [];
+  for (const r of userRecipes || []) {
+    const libId = libraryOverrideId(r);
+    if (libId) overrides.set(libId, r);
+    else own.push(r);
+  }
+  const lib = LIB_RECIPES.map((base) => {
+    const o = overrides.get(base.id);
+    return o ? mergeLibraryOverride(base, o) : base;
+  });
+  return [...lib, ...own];
 }
 
 /* ---------- diet ---------- */
@@ -541,7 +614,7 @@ export async function recipesForShare(recipes, { withPhotos = true } = {}) {
     }
     out.push({
       id: r.id, no: r.no, nameZh: r.nameZh, nameEn: r.nameEn, name: r.name, category: r.category, prepMins: r.prepMins, difficulty: r.difficulty,
-      photo: photos[0] || "", photos, servings: r.servings, ingredients: r.ingredients, steps: r.steps, tips: r.tips, diet: r.diet, tags: r.tags, copyOf: r.copyOf, sourceUrl: r.sourceUrl || "",
+      photo: photos[0] || "", photos, servings: r.servings, ingredients: r.ingredients, steps: r.steps, tips: r.tips, diet: r.diet, tags: r.tags, copyOf: r.copyOf, overrideOf: r.overrideOf || "", sourceUrl: r.sourceUrl || "",
     });
   }
   return out;
