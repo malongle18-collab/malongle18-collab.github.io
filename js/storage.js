@@ -1,9 +1,9 @@
-import { getLang, t } from "./i18n.js?v=16";
-import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=16";
-import { cleanIdNumber, normalizeDocs } from "./docs.js?v=16";
-import { defaultContractEnd } from "./rules.js?v=16";
-import { todayISO } from "./dates.js?v=16";
-import { emptyMenu, normalizeDiet, normalizeMenu, normalizeRecipes } from "./menu.js?v=16";
+import { getLang, t } from "./i18n.js?v=17";
+import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=17";
+import { cleanIdNumber, normalizeDocs } from "./docs.js?v=17";
+import { defaultContractEnd } from "./rules.js?v=17";
+import { todayISO } from "./dates.js?v=17";
+import { emptyMenu, normalizeDiet, normalizeMenu, normalizeRecipes } from "./menu.js?v=17";
 
 export const STORAGE_KEY = "fdh-employer-v1";
 
