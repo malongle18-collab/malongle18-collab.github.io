@@ -1,6 +1,6 @@
-import { addDays, daysBetween, displayISO, toISO as formatISO } from "./dates.js?v=9";
-import { t as tr, tp } from "./i18n.js?v=9";
-import { annualLeaveVestDate, paidStatutoryStart, restDayGaps, isArrangedRestPolicy } from "./rules.js?v=9";
+import { addDays, daysBetween, displayISO, toISO as formatISO } from "./dates.js?v=10";
+import { t as tr, tp } from "./i18n.js?v=10";
+import { annualLeaveVestDate, paidStatutoryStart, restDayGaps, isArrangedRestPolicy } from "./rules.js?v=10";
 
 function item(partial) {
   return {
@@ -194,4 +194,70 @@ export function reminderBadgeCount(helpers, reminderState, today, arrangedMap = 
   return helpers
     .flatMap((h) => buildReminders(h, today, { arrangedRestDays: arrangedMap[h.id] || [] }))
     .filter((r) => isReminderVisible(r, reminderState, today)).length;
+}
+
+
+/* ---------- custom (user-added) reminders ---------- */
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function addMonthsClamp(iso, n, anchorDay) {
+  const y = Number(iso.slice(0, 4));
+  const m = Number(iso.slice(5, 7)) - 1;
+  const total = y * 12 + m + n;
+  const ny = Math.floor(total / 12);
+  const nm = total % 12;
+  const dim = new Date(ny, nm + 1, 0).getDate();
+  const day = Math.min(anchorDay || Number(iso.slice(8, 10)), dim);
+  return `${ny}-${pad2(nm + 1)}-${pad2(day)}`;
+}
+
+/** Next occurrence after marking a repeating reminder done (always later than today and than its current date). */
+export function nextCustomDate(rem, today) {
+  const step = rem.repeat === "yearly" ? 12 : rem.repeat === "monthly" ? 1 : 0;
+  if (!step) return rem.date;
+  const anchor = Number(rem.anchorDay) || Number(String(rem.date).slice(8, 10));
+  let d = addMonthsClamp(rem.date, step, anchor);
+  let guard = 0;
+  while (d <= today && guard++ < 600) d = addMonthsClamp(d, step, anchor);
+  return d;
+}
+
+/** Custom reminders as reminder items (pending only). opts.forHelper hides household-only notes' helper name. */
+export function buildCustomReminders(list, helpers, today, opts = {}) {
+  const names = new Map((helpers || []).map((h) => [h.id, h.name || tr("common.helper")]));
+  return (Array.isArray(list) ? list : [])
+    .filter((r) => r && r.id && r.title && r.date && !r.doneAt)
+    .filter((r) => (opts.helperId === undefined ? true : !r.helperId || r.helperId === opts.helperId))
+    .map((r) =>
+      item({
+        id: `custom:${r.id}`,
+        customId: r.id,
+        helperId: r.helperId || "",
+        helperName: r.helperId ? names.get(r.helperId) || "" : "",
+        type: "custom",
+        title: r.title,
+        body: r.note || "",
+        date: r.date,
+        repeat: r.repeat || "none",
+        urgency: urgencyForDays(daysBetween(today, r.date)),
+      })
+    );
+}
+
+const URGENCY_ORDER = { expired: 0, critical: 1, soon: 2, watch: 3, info: 4 };
+
+export function mergeReminders(...lists) {
+  return lists.flat().sort((a, b) => {
+    const u = (URGENCY_ORDER[a.urgency] ?? 9) - (URGENCY_ORDER[b.urgency] ?? 9);
+    if (u !== 0) return u;
+    return String(a.date).localeCompare(String(b.date));
+  });
+}
+
+/** Custom reminders that are due today or overdue (they feed the bell badge). */
+export function customDueCount(list, reminderState, today) {
+  return buildCustomReminders(list, [], today).filter((r) => r.date <= today && isReminderVisible(r, reminderState || {}, today)).length;
 }
