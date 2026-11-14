@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=16";
+} from "./data.js?v=17";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=16";
-import { escapeHtml, icon } from "./icons.js?v=16";
+} from "./dates.js?v=17";
+import { escapeHtml, icon } from "./icons.js?v=17";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=16";
+} from "./reminders.js?v=17";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=16";
+} from "./rules.js?v=17";
 import {
   arrangedRestList,
   currentHelper,
@@ -102,7 +102,7 @@ import {
   moveNavTab,
   isShopGroupCollapsed,
   setShopGroupCollapsed,
-} from "./storage.js?v=16";
+} from "./storage.js?v=17";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -128,7 +128,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=16";
+} from "./share.js?v=17";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -143,7 +143,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=16";
+} from "./docs.js?v=17";
 import {
   CATEGORIES,
   DIET_KEYS,
@@ -193,9 +193,9 @@ import {
   urlHost,
   weekDates,
   webSearchUrls,
-} from "./menu.js?v=16";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=16";
-import { initSwipe } from "./swipe-delete.js?v=16";
+} from "./menu.js?v=17";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=17";
+import { initSwipe } from "./swipe-delete.js?v=17";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -4662,10 +4662,49 @@ function bootError(err) {
   );
 }
 
+function sheetScrollKey() {
+  const s = ui.sheet;
+  if (!s) return "";
+  return `${s.type || ""}:${s.id || ""}:${s.listId || ""}:${s.date || ""}`;
+}
+
+function captureScroll() {
+  const main = document.querySelector(".main");
+  const sidebar = document.querySelector(".sidebar");
+  const sheet = document.querySelector(".sheet");
+  return {
+    main: main ? main.scrollTop : 0,
+    sidebar: sidebar ? sidebar.scrollTop : 0,
+    sheet: sheet ? sheet.scrollTop : 0,
+    sheetKey: sheetScrollKey(),
+    winX: window.scrollX || 0,
+    winY: window.scrollY || document.documentElement.scrollTop || 0,
+  };
+}
+
+let scrollRestoreToken = 0;
+function restoreScroll(pos) {
+  if (!pos) return;
+  const token = ++scrollRestoreToken;
+  const apply = () => {
+    if (token !== scrollRestoreToken) return;
+    const main = document.querySelector(".main");
+    if (main) main.scrollTop = pos.main;
+    const sidebar = document.querySelector(".sidebar");
+    if (sidebar) sidebar.scrollTop = pos.sidebar;
+    const sheet = document.querySelector(".sheet");
+    if (sheet && pos.sheetKey && pos.sheetKey === sheetScrollKey()) sheet.scrollTop = pos.sheet;
+    if (pos.winY || pos.winX) window.scrollTo(pos.winX, pos.winY);
+  };
+  apply();
+  requestAnimationFrame(apply);
+}
+
 function render() {
   const app = document.getElementById("app");
   if (!app) return;
   const keep = captureForms();
+  const scroll = captureScroll();
   if (!["helper-new", "helper-edit"].includes(ui.tab)) ui.docDraft = null;
   try {
     const sub =
@@ -4686,6 +4725,7 @@ function render() {
       ${ui.toast ? `<div class="toast" role="status">${escapeHtml(ui.toast)}</div>` : ""}
     `;
     restoreForms(keep);
+    restoreScroll(scroll);
     bindAfterRender();
     setupSignaturePad();
   } catch (err) {
