@@ -1,4 +1,4 @@
-const CACHE = "fdh-household-pages-v3";
+const CACHE = "fdh-household-pages-v4";
 const ASSETS = [
   "./",
   "./index.html",
