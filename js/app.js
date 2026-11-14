@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=14";
+} from "./data.js?v=15";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=14";
-import { escapeHtml, icon } from "./icons.js?v=14";
+} from "./dates.js?v=15";
+import { escapeHtml, icon } from "./icons.js?v=15";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=14";
+} from "./reminders.js?v=15";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=14";
+} from "./rules.js?v=15";
 import {
   arrangedRestList,
   currentHelper,
@@ -102,7 +102,7 @@ import {
   moveNavTab,
   isShopGroupCollapsed,
   setShopGroupCollapsed,
-} from "./storage.js?v=14";
+} from "./storage.js?v=15";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -128,7 +128,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=14";
+} from "./share.js?v=15";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -143,7 +143,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=14";
+} from "./docs.js?v=15";
 import {
   CATEGORIES,
   DIET_KEYS,
@@ -190,8 +190,9 @@ import {
   urlHost,
   weekDates,
   webSearchUrls,
-} from "./menu.js?v=14";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=14";
+} from "./menu.js?v=15";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=15";
+import { initSwipe } from "./swipe-delete.js?v=15";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -1500,13 +1501,13 @@ function leaveCalc(h, t) {
                 .sort((a, b) => (b.startDate || "").localeCompare(a.startDate || ""))
                 .map((l) => {
                   const typ = pick(LEAVE_TYPES.find((x) => x.id === l.type)) || l.type;
-                  return `<div class="row">
+                  return swipeRow(`<div class="row">
                     <div class="grow">
                       <div class="title">${escapeHtml(typ)}${tr("log.sep")}${tp("unit.days", l.days)}</div>
                       <div class="sub">${formatDate(l.startDate, { short: true })}${l.endDate && l.endDate !== l.startDate ? tr("range.sep") + formatDate(l.endDate, { short: true }) : ""}${l.note ? tr("log.sep") + escapeHtml(l.note) : ""}</div>
                     </div>
-                    <button class="icon-btn" type="button" data-action="leave-del" data-id="${l.id}" aria-label="${tr("common.delete")}">${icon("close", { size: 18 })}</button>
-                  </div>`;
+                    <button class="icon-btn swipe-inline-del" type="button" data-action="leave-del" data-id="${l.id}" aria-label="${tr("common.delete")}">${icon("close", { size: 18 })}</button>
+                  </div>`, "leave-del", l.id, { hover: false });
                 })
                 .join("")
             : `<p class="muted" style="margin:0">${tr("leave.calc.none")}</p>`
@@ -1586,7 +1587,7 @@ function payRecordRows() {
   return pays
     .map((p) => {
       const c = consentOf(p, "");
-      return `<div class="row pay-row">
+      return swipeRow(`<div class="row pay-row">
         <div class="grow">
           <div class="title">${escapeHtml(p.month || "—")}${tr("log.sep")}${formatMoney(payTotal(p))}</div>
           <div class="sub">${p.paidOn ? formatDate(p.paidOn, { short: true }) : tr("pay.noPaidOn")}${methodLabel(p.method) ? tr("log.sep") + methodLabel(p.method) : ""}${p.note ? tr("log.sep") + escapeHtml(p.note) : ""}</div>
@@ -1600,8 +1601,8 @@ function payRecordRows() {
             <button class="btn secondary small" type="button" data-action="payslip-open" data-id="${p.id}">${icon("download", { size: 15 })} ${tr("payslip.export")}</button>
           </div>
         </div>
-        <button class="icon-btn" type="button" data-action="pay-del" data-id="${p.id}" aria-label="${tr("common.delete")}">${icon("close", { size: 18 })}</button>
-      </div>`;
+        <button class="icon-btn swipe-inline-del" type="button" data-action="pay-del" data-id="${p.id}" aria-label="${tr("common.delete")}">${icon("close", { size: 18 })}</button>
+      </div>`, "pay-del", p.id, { hover: false });
     })
     .join("");
 }
@@ -1852,8 +1853,8 @@ function viewRemind() {
           visible.length
             ? visible
                 .map(
-                  (r) => `
-          <div class="row">
+                  (r) => {
+                    const row = `<div class="row">
             <div class="grow">
               <div class="title">${escapeHtml(r.title)}${r.type === "custom" ? ` <span class="tag brass">${tr("remind.custom")}</span>` : ""}</div>
               <div class="sub">${formatDate(r.date)}${r.type === "custom" && r.repeat !== "none" ? tr("log.sep") + tr(`remind.repeat.${r.repeat}`) : ""}${state.helpers.length > 1 && r.helperName ? tr("log.sep") + escapeHtml(r.helperName) : ""}</div>
@@ -1865,7 +1866,9 @@ function viewRemind() {
               </div>
             </div>
             <span class="status-pill ${r.urgency}">${urgencyWord(r.urgency)}</span>
-          </div>`
+          </div>`;
+                    return r.type === "custom" && r.customId ? swipeRow(row, "reminder-del", r.customId) : row;
+                  }
                 )
                 .join("")
             : `<p class="muted" style="margin:0">${tr("home.noReminders")}</p>`
@@ -1883,9 +1886,9 @@ function viewRemind() {
             <div class="section-head"><h2>${tr("remind.doneList")}</h2></div>
             <div class="card">${doneCustom
               .map(
-                (r) => `<div class="row"><div class="grow"><div class="title">${escapeHtml(r.title)}</div><div class="sub">${tr("remind.doneOn", { date: fmtDateTime(r.doneAt) })}</div></div>
+                (r) => swipeRow(`<div class="row"><div class="grow"><div class="title">${escapeHtml(r.title)}</div><div class="sub">${tr("remind.doneOn", { date: fmtDateTime(r.doneAt) })}</div></div>
                   <button class="btn ghost small" type="button" data-action="reminder-restore" data-id="${r.id}">${tr("remind.restore")}</button>
-                  <button class="icon-btn" type="button" data-action="reminder-del" data-id="${r.id}" aria-label="${tr("common.delete")}">${icon("close", { size: 18 })}</button></div>`
+                  <button class="icon-btn swipe-inline-del" type="button" data-action="reminder-del" data-id="${r.id}" aria-label="${tr("common.delete")}">${icon("close", { size: 18 })}</button></div>`, "reminder-del", r.id, { hover: false })
               )
               .join("")}</div>
           </section>`
@@ -1918,14 +1921,14 @@ function viewTasks() {
           ? list
               .map((task) => {
                 const time = timeLabel(task);
-                return `<div class="row">
+                return swipeRow(`<div class="row">
                   <div class="grow">
                     <div class="title">${escapeHtml(task.title)}</div>
                     <div class="sub">${escapeHtml(scheduleLabel(task))}${time ? tr("log.sep") + escapeHtml(time) : ""}</div>
                     ${task.detail ? `<p class="tiny muted" style="margin:0.3rem 0 0">${escapeHtml(task.detail)}</p>` : ""}
                   </div>
                   <button class="btn secondary" type="button" data-action="task-edit" data-id="${task.id}" style="min-height:2.4rem;padding:0.3rem 0.7rem">${tr("common.edit")}</button>
-                </div>`;
+                </div>`, "task-del", task.id);
               })
               .join("")
           : `<div class="empty" style="padding:0.4rem 0"><p class="muted" style="margin:0">${tr("tasks.none")}</p></div>`
@@ -1950,14 +1953,14 @@ function viewRules() {
         list.length
           ? list
               .map(
-                (rule) => `
-        <article class="card" style="margin-top:0.65rem">
+                (rule) => swipeRow(`
+        <article class="card rule-card">
           <div class="section-head">
             <h2>${escapeHtml(rule.title)}</h2>
             <button class="linkish" type="button" data-action="rule-edit" data-id="${rule.id}">${tr("common.edit")}</button>
           </div>
           <p style="margin:0;white-space:pre-wrap">${escapeHtml(rule.body)}</p>
-        </article>`
+        </article>`, "rule-del", rule.id, { className: "rule-swipe" })
               )
               .join("")
           : `<div class="card"><p class="muted" style="margin:0">${tr("rules.none")}</p></div>`
@@ -2048,6 +2051,36 @@ function parentTickAction() {
   return role === "helper" ? "h-item-tick-group" : "item-tick-group";
 }
 
+
+function swipeDataAttrs(data = {}) {
+  return Object.entries(data)
+    .filter(([, v]) => v != null && v !== "")
+    .map(([k, v]) => ` data-${k}="${escapeHtml(String(v))}"`)
+    .join("");
+}
+
+function swipeParts(action, id, opts = {}) {
+  const extra = swipeDataAttrs(opts.data);
+  const idA = escapeHtml(id);
+  const act = escapeHtml(action);
+  const confirm = opts.confirmKey
+    ? ` data-swipe-confirm="${escapeHtml(opts.confirmKey)}" data-swipe-confirm-name="${escapeHtml(opts.confirmName || "")}"`
+    : "";
+  const hover = opts.hover === false
+    ? ""
+    : `<button type="button" class="swipe-hover-del" data-action="${act}" data-id="${idA}"${extra}>${tr("common.delete")}</button>`;
+  const del = `<button type="button" class="swipe-del-btn" data-action="${act}" data-id="${idA}"${extra} tabindex="-1">${tr("common.delete")}</button>`;
+  return { extra, confirm, hover, del };
+}
+
+function swipeRow(inner, action, id, opts = {}) {
+  const p = swipeParts(action, id, opts);
+  const cls = opts.className ? ` ${opts.className}` : "";
+  const tag = opts.tag || "div";
+  const attrs = opts.attrs || "";
+  return `<${tag} class="swipe-row${cls}" data-swipe-row${p.confirm}${attrs}><div class="swipe-front">${inner}${p.hover}</div>${p.del}</${tag}>`;
+}
+
 function shopGroupToggleHtml(parent, collapsed, inner) {
   const name = parent.name || "";
   const label = tr(collapsed ? "shop.recipe.expand" : "shop.recipe.collapse", { name });
@@ -2068,11 +2101,10 @@ function applyShopGroupCollapsed(group, collapsed) {
 }
 
 function tickLeafHtml(it, ctx) {
-  return `<li class="tick-item ${it.bought ? "is-bought" : ""}" data-item-row>
-        <label class="tick-label"><input type="checkbox" data-tick="leaf" data-action="${leafTickAction()}" data-id="${escapeHtml(it.id)}" ${it.bought ? "checked" : ""}>
+  const inner = `<label class="tick-label"><input type="checkbox" data-tick="leaf" data-action="${leafTickAction()}" data-id="${escapeHtml(it.id)}" ${it.bought ? "checked" : ""}>
           <span class="tick-text"><span class="tick-name">${escapeHtml(it.name)}${it.qty ? `<small>${escapeHtml(it.qty)}</small>` : ""}</span>${it.alt ? `<small class="alt">${escapeHtml(it.alt)}</small>` : ""}</span></label>
-        ${recentBadge(it, ctx)}
-      </li>`;
+        ${recentBadge(it, ctx)}`;
+  return swipeRow(inner, "item-del", it.id, { tag: "li", className: `tick-item ${it.bought ? "is-bought" : ""}`, attrs: " data-item-row" });
 }
 
 function tickGroupHtml(parent, children, ctx, hiddenChildDone = 0, hiddenChildTotal = 0) {
@@ -2082,11 +2114,12 @@ function tickGroupHtml(parent, children, ctx, hiddenChildDone = 0, hiddenChildTo
   const checked = total > 0 && done === total;
   const collapsed = isShopGroupCollapsed(parent.listId, parent.id);
   const inner = `<span class="tick-text"><span class="tick-name">${escapeHtml(parent.name)}<small data-group-prog>${tr("shop.recipe.progress", { done, total })}</small></span>${parent.note ? `<small class="alt">${escapeHtml(parent.note)}</small>` : ""}</span>`;
-  return `<li class="tick-group ${checked ? "is-bought" : ""} ${collapsed ? "is-collapsed" : ""}" data-recipe-group="${escapeHtml(parent.id)}" data-list="${escapeHtml(parent.listId || "")}" data-hidden-child-done="${hiddenChildDone}" data-hidden-child-total="${hiddenChildTotal}">
-        <div class="tick-item is-parent">
+  const parentRow = `<div class="tick-item is-parent">
           <label class="tick-check"><input type="checkbox" data-tick="parent" data-action="${parentTickAction()}" data-id="${escapeHtml(parent.id)}" ${checked ? "checked" : ""} aria-label="${escapeHtml(tr("shop.recipe.tickAll", { name: parent.name || "" }))}"></label>
           ${shopGroupToggleHtml(parent, collapsed, inner)}
-        </div>
+        </div>`;
+  return `<li class="tick-group ${checked ? "is-bought" : ""} ${collapsed ? "is-collapsed" : ""}" data-recipe-group="${escapeHtml(parent.id)}" data-list="${escapeHtml(parent.listId || "")}" data-hidden-child-done="${hiddenChildDone}" data-hidden-child-total="${hiddenChildTotal}">
+        ${swipeRow(parentRow, "item-del", parent.id, { confirmKey: "shop.recipe.deleteConfirm", confirmName: parent.name || "" })}
         <ul class="tick-sub"${collapsed ? " hidden" : ""}>${children.map((c) => tickLeafHtml(c, ctx)).join("")}</ul>
       </li>`;
 }
@@ -2220,7 +2253,7 @@ function catalogNameOptions() {
 
 function shopDetailLeafHtml(item, opts) {
   const { hint = "", extra = "", tickAction, tickKind = "leaf" } = opts;
-  return `<div class="shop-item ${item.bought ? "is-bought" : ""} ${item.parentId ? "is-child" : ""}" data-item-row>
+  const inner = `<div class="shop-item ${item.bought ? "is-bought" : ""} ${item.parentId ? "is-child" : ""}" data-item-row>
                   <div class="thumb">${item.photo ? `<img src="${item.photo}" alt="">` : icon("image", { size: 22 })}</div>
                   <div>
                     <label class="tick-label tick-inline"><input type="checkbox" data-tick="${tickKind}" data-action="${tickAction}" data-id="${item.id}" ${item.bought ? "checked" : ""}>
@@ -2236,6 +2269,7 @@ function shopDetailLeafHtml(item, opts) {
                     ${extra}
                   </div>
                 </div>`;
+  return swipeRow(inner, "item-del", item.id);
 }
 
 function shopDetailGroupHtml(parent, children, leafHtml) {
@@ -2244,14 +2278,14 @@ function shopDetailGroupHtml(parent, children, leafHtml) {
   const inner = `<span class="thumb" aria-hidden="true">${icon("utensils", { size: 22 })}</span>
           <span class="shop-parent-copy"><span class="title" style="font-weight:650">${escapeHtml(parent.name)}</span>
           <span class="tiny muted">${parent.note ? escapeHtml(parent.note) + tr("log.sep") : ""}<span data-group-prog>${tr("shop.recipe.progress", { done: st.done, total: st.total })}</span></span></span>`;
-  return `<section class="shop-group ${st.checked ? "is-bought" : ""} ${collapsed ? "is-collapsed" : ""}" data-recipe-group="${escapeHtml(parent.id)}" data-list="${escapeHtml(parent.listId || "")}">
-      <div class="shop-item is-parent">
+  const parentRow = `<div class="shop-item is-parent">
         <label class="tick-check"><input type="checkbox" data-tick="parent" data-action="${parentTickAction()}" data-id="${escapeHtml(parent.id)}" ${st.checked ? "checked" : ""} aria-label="${escapeHtml(tr("shop.recipe.tickAll", { name: parent.name || "" }))}"></label>
         <div class="shop-parent-main">
           ${shopGroupToggleHtml(parent, collapsed, inner)}
-          ${role === "helper" ? "" : `<div class="btn-row" style="margin-top:0.35rem"><button class="btn secondary" type="button" data-action="item-del" data-id="${escapeHtml(parent.id)}" style="min-height:2.4rem;padding:0.3rem 0.7rem">${tr("shop.recipe.delete")}</button></div>`}
         </div>
-      </div>
+      </div>`;
+  return `<section class="shop-group ${st.checked ? "is-bought" : ""} ${collapsed ? "is-collapsed" : ""}" data-recipe-group="${escapeHtml(parent.id)}" data-list="${escapeHtml(parent.listId || "")}">
+      ${swipeRow(parentRow, "item-del", parent.id, { confirmKey: "shop.recipe.deleteConfirm", confirmName: parent.name || "" })}
       <div class="shop-children"${collapsed ? " hidden" : ""}>${children.map(leafHtml).join("")}</div>
     </section>`;
 }
@@ -3370,7 +3404,7 @@ function dishLine(d, date, recipes, ro, menu) {
     ? `<button class="recipe-chip" type="button" data-go="${menuGo("recipe")}" data-recipe="${escapeHtml(r.id)}">${icon("book", { size: 13 })}${recipeNoLabel(r)} ${tr("recipe.link")}</button>`
     : "";
   const marks = `${recentTag(eatenDaysAgo(menu, dishKey(d), date))}${r ? conflictBadge(r) : ""}`;
-  return `<div class="dish">
+  const inner = `<div class="dish">
     <div class="dish-main">
       <span class="dish-name">${escapeHtml(label)}</span>${link}
       ${marks ? `<div class="dish-marks">${marks}</div>` : ""}
@@ -3378,6 +3412,7 @@ function dishLine(d, date, recipes, ro, menu) {
     </div>
     ${ro ? "" : `<button class="btn secondary small" type="button" data-action="dish-edit" data-id="${escapeHtml(d.id)}" data-date="${date}">${tr("common.edit")}</button>`}
   </div>`;
+  return ro ? inner : swipeRow(inner, "dish-del", d.id, { data: { date } });
 }
 
 function menuTabs(active) {
@@ -3587,16 +3622,17 @@ function recipeCards(list, ro) {
   const { menu } = menuData();
   const t = today();
   return `<div class="recipe-grid">${list
-    .map(
-      (r) => `<button class="recipe-card" type="button" data-go="${ro ? "h-recipe" : "recipe"}" data-recipe="${escapeHtml(r.id)}">
+    .map((r) => {
+      const card = `<button class="recipe-card" type="button" data-go="${ro ? "h-recipe" : "recipe"}" data-recipe="${escapeHtml(r.id)}">
         <span class="recipe-thumb">${r.photo ? `<img src="${r.photo}" alt="" loading="lazy">` : icon("utensils", { size: 26 })}<b class="recipe-no">#${r.no}</b>${r.builtin ? "" : `<i class="mine-dot" title="${tr("recipe.src.mine")}"></i>`}</span>
         <span class="recipe-meta"><strong>${recipeNameHtml(r)}</strong>
           <span class="recipe-sub">${escapeHtml(recipeMeta(r))}</span>
           <span class="recipe-tags">${dietBadges(r)}${r.sourceUrl ? `<em class="dtag d-web">${tr("recipe.web.badge")}</em>` : ""}</span>
           ${conflictBadge(r)}${menu ? recentTag(recipeEatenDaysAgo(menu, r.id, t)) : ""}
         </span>
-      </button>`
-    )
+      </button>`;
+      return !ro && !r.builtin ? swipeRow(card, "recipe-del", r.id, { className: "recipe-swipe" }) : card;
+    })
     .join("")}</div>`;
 }
 
@@ -4747,6 +4783,27 @@ function writeShopBackToEmployer() {
   save();
 }
 
+
+function removeShopItemsFrom(items, id) {
+  const list = items || [];
+  const target = list.find((i) => i.id === id);
+  const drop = new Set([id]);
+  if (target && isRecipeParent(target)) {
+    for (const i of list) if (i.parentId === id) drop.add(i.id);
+  }
+  let next = list.filter((i) => !drop.has(i.id));
+  const parentId = target?.parentId;
+  if (parentId && !next.some((i) => i.parentId === parentId)) {
+    next = next.filter((i) => i.id !== parentId);
+  }
+  return { next, target, drop };
+}
+
+function confirmShopItemDelete(target) {
+  if (!target || !isRecipeParent(target)) return true;
+  return window.confirm(tr("shop.recipe.deleteConfirm", { name: target.name || "" }));
+}
+
 async function onClick(ev) {
   const go = ev.target.closest("[data-go]");
   if (go) {
@@ -4779,6 +4836,12 @@ async function onClick(ev) {
   if (!act) return;
   const action = act.getAttribute("data-action");
   const id = act.getAttribute("data-id");
+  const swipeRowEl = act.closest("[data-swipe-row]");
+  const confirmKey = swipeRowEl?.getAttribute("data-swipe-confirm");
+  if (confirmKey && act.matches(".swipe-del-btn, .swipe-hover-del") && action !== "item-del") {
+    const name = swipeRowEl.getAttribute("data-swipe-confirm-name") || "";
+    if (!window.confirm(tr(confirmKey, { name }))) return;
+  }
   if (action === "choose-role") {
     const next = act.getAttribute("data-role");
     if (!next) {
@@ -5192,6 +5255,7 @@ async function onClick(ev) {
     save();
     ui.sheet = null;
     toast(tr("menu.dish.deleted"));
+    render();
     return;
   }
   if (role !== "helper" && action === "copy-open") {
@@ -5401,16 +5465,31 @@ async function onClick(ev) {
     return;
   }
   if (action === "item-del") {
-    const target = state.shopItems.find((i) => i.id === id);
-    const drop = new Set([id]);
-    if (target && isRecipeParent(target)) {
-      for (const i of state.shopItems) if (i.parentId === id) drop.add(i.id);
+    if (role === "helper") {
+      const p = sessionPayload();
+      if (!p) return;
+      const { next, target, drop } = removeShopItemsFrom(p.shopItems || [], id);
+      if (!target) return;
+      if (!confirmShopItemDelete(target)) return;
+      p.shopItems = next;
+      persistSessionPayload();
+      if (sameDeviceWriteback()) {
+        state.shopItems = state.shopItems.filter((i) => !drop.has(i.id));
+        const parentId = target.parentId;
+        if (parentId && !state.shopItems.some((i) => i.parentId === parentId)) {
+          state.shopItems = state.shopItems.filter((i) => i.id !== parentId);
+        }
+        removeCatalogEntry(state, id);
+        save();
+      }
+      ui.sheet = null;
+      render();
+      return;
     }
-    state.shopItems = state.shopItems.filter((i) => !drop.has(i.id));
-    const parentId = target?.parentId;
-    if (parentId && !state.shopItems.some((i) => i.parentId === parentId)) {
-      state.shopItems = state.shopItems.filter((i) => i.id !== parentId);
-    }
+    const { next, target } = removeShopItemsFrom(state.shopItems, id);
+    if (!target) return;
+    if (!confirmShopItemDelete(target)) return;
+    state.shopItems = next;
     removeCatalogEntry(state, id);
     save();
     ui.sheet = null;
@@ -6525,6 +6604,7 @@ window.addEventListener("hashchange", () => {
 document.addEventListener("click", onClick);
 document.addEventListener("change", onChange);
 document.addEventListener("submit", onSubmit);
+initSwipe();
 
 /** PWA share target: ?title=&text=&url= from the OS share sheet opens the "add from web" sheet. */
 function consumeShareTarget() {
