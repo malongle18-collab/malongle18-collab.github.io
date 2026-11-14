@@ -722,7 +722,7 @@ function monthGrid(year, month, marks, interactive) {
     }
   }
   const dow = WEEKDAYS.map((w) => `<div class="dow">${w.shortZh}</div>`).join("");
-  return `<div class="cal" role="grid">${dow}${cells.join("")}</div>`;
+  return `<div class="cal${interactive ? " is-interactive" : ""}" role="grid">${dow}${cells.join("")}</div>`;
 }
 
 function calendarMarks(h, year, month) {
@@ -787,7 +787,12 @@ function leaveRest(h, t) {
     </div>
     ${
       isArrangedRestPolicy(h.restDay)
-        ? `<p class="tiny muted" style="margin:0.8rem 0 0.4rem">點選日期即可加上或取消休息日（朱印標記）。對調時，取消原來的日子，再點另一天即可。</p>`
+        ? `<div class="card" style="margin:0.8rem 0">
+            <label class="field" style="margin:0">
+              <span>加入休息日<span class="hint">可開啟日期選擇器，或在下面年曆直接點選日子。再點一次即可取消。</span></span>
+              <input type="date" data-action="add-rest-date" aria-label="加入休息日">
+            </label>
+          </div>`
         : `<p class="tiny muted" style="margin:0.8rem 0 0.4rem">固定每週${weekdayLabel(h.restDay)}。如需對調，可在「年假及其他」登記休息日對調，或改為由僱主安排後在年曆指定。</p>`
     }
     <div class="card">
@@ -2436,8 +2441,9 @@ async function onClick(ev) {
       return;
     }
     if (isArrangedRestPolicy(h.restDay)) {
-      toggleArrangedRestDay(state, h.id, iso);
+      const nowOn = toggleArrangedRestDay(state, h.id, iso);
       save();
+      toast(nowOn.includes(iso) ? "已加上這天為休息日" : "已取消這天休息日");
       render();
     }
     return;
@@ -2707,6 +2713,22 @@ async function onChange(ev) {
     render();
     return;
   }
+  if (action === "add-rest-date") {
+    const h = helper();
+    const iso = String(el.value || "");
+    if (!h || !iso) return;
+    const already = arrangedRestList(state, h.id).includes(iso);
+    if (!already) toggleArrangedRestDay(state, h.id, iso);
+    const d = parseISO(iso);
+    if (d) {
+      ui.year = d.getFullYear();
+      ui.month = d.getMonth();
+    }
+    save();
+    toast(already ? "這天已經是休息日" : "已加上這天為休息日");
+    render();
+    return;
+  }
   if (action === "toggle-notify") {
     await toggleNotify(el.checked);
     return;
@@ -2766,8 +2788,14 @@ function onSubmit(ev) {
     else state.helpers.push(data);
     state.currentHelperId = data.id;
     save();
-    toast("已儲存");
-    setTab("home");
+    if (isArrangedRestPolicy(data.restDay)) {
+      toast("已儲存。請在年曆上點選休息日，或開啟日期選擇器加入。");
+      ui.leavePane = "rest";
+      setTab("leave");
+    } else {
+      toast("已儲存");
+      setTab("home");
+    }
   }
   if (form.getAttribute("id") === "leave-form") {
     ev.preventDefault();
