@@ -87,12 +87,18 @@
 
 html {
   height: 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
+  width: 100%;
+  max-width: 100%;
   min-height: 100%;
   min-height: 100dvh;
   font-family: var(--font-sans);
@@ -101,6 +107,8 @@ body {
   color: var(--ink);
   background: var(--bg);
   overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: pan-y;
   caret-color: var(--caret);
 }
 
@@ -150,11 +158,14 @@ button {
 #app {
   position: relative;
   z-index: 1;
+  width: 100%;
+  max-width: 44rem;
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  max-width: 44rem;
   margin: 0 auto;
+  overflow-x: hidden;
+  min-width: 0;
 }
 
 /* ----- Shell ----- */
@@ -264,7 +275,10 @@ button {
 
 .main {
   flex: 1 1 auto;
-  overflow: auto;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-x: none;
   -webkit-overflow-scrolling: touch;
   padding: 1rem max(var(--pad-x), var(--safe-l)) 1.4rem max(var(--pad-x), var(--safe-r));
   scrollbar-color: var(--line-strong) transparent;

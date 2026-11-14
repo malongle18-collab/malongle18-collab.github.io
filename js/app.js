@@ -966,6 +966,7 @@ function leaveCalc(h, t) {
 
 function monthPaySnapshot(h, iso) {
   const d = parseISO(iso);
+  if (!d) return { total: 0, label: "—" };
   const year = d.getFullYear();
   const month = d.getMonth();
   const start = h.startDate || h.contractStart;
@@ -1509,14 +1510,19 @@ function sessionHelper() {
   return sessionPayload()?.helper || null;
 }
 
+function replaceName(text, name) {
+  const from = String(name || "").trim() || "外傭";
+  return String(text || "").split(from).join("你");
+}
+
 function helperReminderList() {
   const p = sessionPayload();
   if (!p?.helper) return [];
   const h = { ...p.helper };
   return buildReminders(h, today(), { arrangedRestDays: p.arrangedRestDays || [] }).map((r) => ({
     ...r,
-    title: r.title.replaceAll(h.name || "外傭", "你"),
-    body: (r.body || "").replaceAll(h.name || "外傭", "你"),
+    title: replaceName(r.title, h.name),
+    body: replaceName(r.body || "", h.name),
   }));
 }
 
@@ -2219,8 +2225,11 @@ function bootError(err) {
   app.innerHTML = `
     <main class="main">
       <h1 class="screen-title">載入時發生問題</h1>
-      <p class="lede">請重新整理這個頁面。如果仍然空白，用無痕視窗開啟，或在瀏覽器清除此網站的資料後再試。本機已儲存的資料不會因此刪除。</p>
-      <p class="disclaimer">${escapeHtml(msg)}</p>
+      <p class="lede">請重新整理這個頁面。用無痕視窗可以先確認網站本身是否正常；普通視窗請只清快取，不要清除網站資料，以免刪走已輸入的外傭資料。</p>
+      <p class="note-box warn">${escapeHtml(msg)}</p>
+      <div class="btn-row">
+        <button class="btn" type="button" onclick="location.reload()">重新整理</button>
+      </div>
     </main>
   `;
 }
@@ -3062,9 +3071,16 @@ function maybeNotify() {
 }
 
 function registerSW() {
-  if (!("serviceWorker" in navigator)) return;
-  if (location.protocol === "file:") return;
-  navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).catch(() => {});
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    if (location.protocol === "file:") return;
+    const opts = { updateViaCache: "none" };
+    Promise.resolve(navigator.serviceWorker.register("./sw.js", opts)).catch(() => {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    });
+  } catch {
+    /* ignore */
+  }
 }
 
 window.addEventListener("hashchange", () => {
@@ -3081,9 +3097,17 @@ try {
   if (role === "employer" && !state.helpers.length && !["helper-new", "onboard", "role"].includes(ui.tab)) ui.tab = "onboard";
   if (role === "helper" && !sessionHelper() && ui.tab !== "role") ui.tab = "h-enter";
   render();
-  registerSW();
-  maybeNotify();
 } catch (err) {
   console.error(err);
   bootError(err);
+}
+try {
+  registerSW();
+} catch {
+  /* ignore */
+}
+try {
+  maybeNotify();
+} catch (err) {
+  console.warn(err);
 }

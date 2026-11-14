@@ -20,19 +20,30 @@ export function todayISO(now = new Date()) {
 }
 
 export function startOfDay(date) {
+  if (!date || typeof date.getFullYear !== "function" || Number.isNaN(date.getTime())) return null;
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 export function addDays(isoOrDate, days) {
   const d =
-    typeof isoOrDate === "string" ? parseISO(isoOrDate) : new Date(isoOrDate.getTime());
+    typeof isoOrDate === "string"
+      ? parseISO(isoOrDate)
+      : isoOrDate
+        ? new Date(isoOrDate.getTime())
+        : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
   d.setDate(d.getDate() + days);
   return d;
 }
 
 export function addMonths(isoOrDate, months) {
   const d =
-    typeof isoOrDate === "string" ? parseISO(isoOrDate) : new Date(isoOrDate.getTime());
+    typeof isoOrDate === "string"
+      ? parseISO(isoOrDate)
+      : isoOrDate
+        ? new Date(isoOrDate.getTime())
+        : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
   const day = d.getDate();
   d.setDate(1);
   d.setMonth(d.getMonth() + months);
@@ -48,6 +59,7 @@ export function addYears(isoOrDate, years) {
 export function daysBetween(a, b) {
   const da = startOfDay(typeof a === "string" ? parseISO(a) : a);
   const db = startOfDay(typeof b === "string" ? parseISO(b) : b);
+  if (!da || !db) return 0;
   return Math.round((db - da) / 86400000);
 }
 
@@ -57,6 +69,7 @@ export function daysInMonth(year, monthIndex) {
 
 export function weekday(isoOrDate) {
   const d = typeof isoOrDate === "string" ? parseISO(isoOrDate) : isoOrDate;
+  if (!d || Number.isNaN(d.getTime())) return -1;
   return d.getDay();
 }
 
@@ -87,6 +100,7 @@ export function clampDateISO(iso) {
 
 export function monthKey(isoOrDate) {
   const d = typeof isoOrDate === "string" ? parseISO(isoOrDate) : isoOrDate;
+  if (!d || Number.isNaN(d.getTime())) return "";
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 

@@ -68,7 +68,7 @@ export function emptyState() {
 function migrate(raw) {
   const state = { ...emptyState(), ...(raw || {}) };
   state.version = DATA_VERSION;
-  state.helpers = Array.isArray(state.helpers) ? state.helpers : [];
+  state.helpers = (Array.isArray(state.helpers) ? state.helpers : []).filter((h) => h && typeof h === "object" && h.id);
   state.leaveLogs = Array.isArray(state.leaveLogs) ? state.leaveLogs : [];
   state.payments = Array.isArray(state.payments) ? state.payments : [];
   state.shStatuses = state.shStatuses && typeof state.shStatuses === "object" ? state.shStatuses : {};
