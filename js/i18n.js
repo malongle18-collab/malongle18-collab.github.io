@@ -1,7 +1,7 @@
 /* Lightweight i18n for the FDW household helper. Languages: zh-Hant (default) and en.
    Saved choice (localStorage "fdh-lang-v1") wins over device language. */
-import { zhHant } from "./i18n-zh.js?v=11";
-import { en } from "./i18n-en.js?v=11";
+import { zhHant } from "./i18n-zh.js?v=12";
+import { en } from "./i18n-en.js?v=12";
 
 export const LANG_KEY = "fdh-lang-v1";
 export const LANGS = [
@@ -100,6 +100,15 @@ function lookup(lang, key) {
 /** t("key", { name: "x" }) with {name} interpolation. Falls back to zh-Hant, then to the key. */
 export function t(key, vars) {
   let s = lookup(getLang(), key);
+  if (s === undefined) s = lookup(FALLBACK, key);
+  if (s === undefined) return key;
+  if (!vars) return s;
+  return s.replace(/\{(\w+)\}/g, (m, name) => (vars[name] === undefined || vars[name] === null ? "" : String(vars[name])));
+}
+
+/** Translate into a specific language (e.g. a bilingual message), regardless of the UI language. */
+export function tIn(lang, key, vars) {
+  let s = lookup(lang, key);
   if (s === undefined) s = lookup(FALLBACK, key);
   if (s === undefined) return key;
   if (!vars) return s;
