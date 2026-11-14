@@ -1,6 +1,6 @@
 /* Passport / HKID numbers and uploaded document files (images + PDF). */
-import { compressImageFile } from "./share.js?v=17";
-import { t } from "./i18n.js?v=17";
+import { compressImageFile } from "./share.js?v=18";
+import { t } from "./i18n.js?v=18";
 
 export const DOC_TYPES = ["passport", "hkid"];
 export const MAX_DOC_FILES = 2;

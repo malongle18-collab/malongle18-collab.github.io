@@ -1,4 +1,4 @@
-import { t } from "./i18n.js?v=17";
+import { t } from "./i18n.js?v=18";
 /** PIN-encrypted helper snapshots for sharing and same-phone unlock. */
 
 const textEnc = new TextEncoder();
