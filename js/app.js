@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=15";
+} from "./data.js?v=16";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=15";
-import { escapeHtml, icon } from "./icons.js?v=15";
+} from "./dates.js?v=16";
+import { escapeHtml, icon } from "./icons.js?v=16";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=15";
+} from "./reminders.js?v=16";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=15";
+} from "./rules.js?v=16";
 import {
   arrangedRestList,
   currentHelper,
@@ -102,7 +102,7 @@ import {
   moveNavTab,
   isShopGroupCollapsed,
   setShopGroupCollapsed,
-} from "./storage.js?v=15";
+} from "./storage.js?v=16";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -128,7 +128,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=15";
+} from "./share.js?v=16";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -143,7 +143,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=15";
+} from "./docs.js?v=16";
 import {
   CATEGORIES,
   DIET_KEYS,
@@ -181,6 +181,9 @@ import {
   recipeNameOther,
   recipeNoLabel,
   recipeShareText,
+  recipePhotosOf,
+  MAX_RECIPE_PHOTOS,
+  isRecipePhoto,
   recipesForShare,
   shiftISO,
   slotLabel,
@@ -190,9 +193,9 @@ import {
   urlHost,
   weekDates,
   webSearchUrls,
-} from "./menu.js?v=15";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=15";
-import { initSwipe } from "./swipe-delete.js?v=15";
+} from "./menu.js?v=16";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=16";
+import { initSwipe } from "./swipe-delete.js?v=16";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -250,6 +253,8 @@ const ui = {
   cookStep: 0,
   cookTicks: {},
   recipePhoto: "",
+  recipePhotos: [],
+  recipePhotoReplace: null,
   recipeDraft: null,
   slotArm: "",
 };
@@ -1977,6 +1982,118 @@ function listDateLabel(list) {
   return d ? formatDate(d, { short: true }) : "";
 }
 
+function isISODate(v) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
+}
+
+function parseShopDateInput(v) {
+  return isISODate(v) ? String(v) : "";
+}
+
+function setShopCalFromDate(iso) {
+  if (!isISODate(iso)) return;
+  ui.shopCal = { year: Number(iso.slice(0, 4)), month: Number(iso.slice(5, 7)) - 1 };
+}
+
+function compareShopLists(a, b) {
+  const da = listDate(a);
+  const db = listDate(b);
+  if (!da && !db) return (b.createdAt || "").localeCompare(a.createdAt || "");
+  if (!da) return -1;
+  if (!db) return 1;
+  return db.localeCompare(da) || (b.createdAt || "").localeCompare(a.createdAt || "");
+}
+
+function shopNamePlace(list) {
+  const name = list.title || "";
+  const place = placeLabel(list.place);
+  if (name && place) return `${escapeHtml(name)}${tr("log.sep")}${place}`;
+  return name ? escapeHtml(name) : place;
+}
+
+function shopHeadLines(list, { titleClass = "shop-line-date" } = {}) {
+  const date = listDate(list);
+  if (date) {
+    return `<span class="${titleClass}">${escapeHtml(formatDate(date, { short: true }))}</span><span class="shop-line-meta">${shopNamePlace(list)}</span>`;
+  }
+  const name = escapeHtml(list.title || placeLabel(list.place));
+  const place = list.title ? placeLabel(list.place) : "";
+  return `<span class="${titleClass}">${name || escapeHtml(tr("shop.date.none"))}</span>${place ? `<span class="shop-line-meta">${place}</span>` : ""}`;
+}
+
+function shopDateFieldHtml({ name = "date", value = "", action = "", listId = "" } = {}) {
+  const iso = parseShopDateInput(value);
+  const listAttr = listId ? ` data-list="${escapeHtml(listId)}"` : "";
+  return `<div class="field shop-date-field">
+    <span>${tr("shop.date")}</span>
+    <div class="shop-date-row">
+      <input type="date"${name ? ` name="${name}"` : ""} ${action ? `data-action="${action}"` : ""} ${listId ? `data-list="${escapeHtml(listId)}"` : ""} value="${escapeHtml(iso)}" aria-label="${tr("shop.date")}">
+      ${iso ? `<button class="btn secondary shop-date-clear" type="button" data-action="clear-shop-date"${listAttr}>${tr("shop.date.clear")}</button>` : ""}
+    </div>
+  </div>`;
+}
+
+function currentRecipePhotos() {
+  if (Array.isArray(ui.recipePhotos) && ui.recipePhotos.length) return ui.recipePhotos.filter(isRecipePhoto).slice(0, MAX_RECIPE_PHOTOS);
+  return ui.recipePhoto && isRecipePhoto(ui.recipePhoto) ? [ui.recipePhoto] : [];
+}
+
+function setRecipePhotos(list) {
+  const photos = (list || []).filter(isRecipePhoto).slice(0, MAX_RECIPE_PHOTOS);
+  ui.recipePhotos = photos;
+  ui.recipePhoto = photos[0] || "";
+}
+
+function recipePhotoFieldHtml() {
+  const photos = currentRecipePhotos();
+  const chips = photos
+    .map(
+      (src, i) => `<div class="recipe-photo-chip">
+        <button class="photo-btn" type="button" data-action="replace-recipe-photo" data-i="${i}" aria-label="${tr("recipe.photo.replace")}">
+          <img src="${src}" alt="">
+        </button>
+        <button class="photo-del" type="button" data-action="recipe-photo-remove" data-i="${i}" aria-label="${tr("recipe.photo.remove")}">×</button>
+      </div>`
+    )
+    .join("");
+  const add = photos.length < MAX_RECIPE_PHOTOS
+    ? `<button class="photo-btn is-add" type="button" data-action="pick-recipe-photo" aria-label="${tr(photos.length ? "recipe.photo.addMore" : "recipe.photo.add")}">${icon("camera", { size: 22 })}</button>`
+    : "";
+  return `<div class="field">
+    <span>${tr("recipe.f.photo")}</span>
+    <div class="photo-row recipe-photos">${chips}${add}</div>
+    <p class="tiny muted recipe-photos-hint">${tr("recipe.photo.max", { n: MAX_RECIPE_PHOTOS })}</p>
+    <input type="file" accept="image/*" multiple data-role="recipe-photo-input" hidden>
+  </div>`;
+}
+
+function recipeGalleryHtml(r, className = "recipe-hero") {
+  const photos = recipePhotosOf(r);
+  if (!photos.length) return "";
+  const rest = photos.slice(1);
+  return `<div class="recipe-gallery">
+    <img class="${className}" src="${photos[0]}" alt="${escapeHtml(recipeName(r))}">
+    ${rest.length ? `<div class="recipe-gallery-rest">${rest.map((src) => `<img src="${src}" alt="">`).join("")}</div>` : ""}
+  </div>`;
+}
+
+function syncClearDateButton(input) {
+  const btn = input?.closest(".shop-date-field, .shop-date-row, label, .field")?.querySelector("[data-action=clear-shop-date]")
+    || input?.parentElement?.querySelector("[data-action=clear-shop-date]");
+  if (btn) btn.hidden = !parseShopDateInput(input.value);
+}
+
+function applyClearedShopDateInput(input) {
+  if (!input) return;
+  input.value = "";
+  syncClearDateButton(input);
+  if (input.getAttribute("data-action") === "gen-shop-date") {
+    const form = input.closest("#gen-form");
+    const title = form?.elements?.title;
+    if (title && isMenuShopAutoTitle(title.value)) title.value = menuShopAutoTitle("");
+  }
+}
+
 function shopMarks(lists) {
   const marks = {};
   for (const l of lists) {
@@ -2150,10 +2267,7 @@ function shopCard(list, items, detailTab, ctx) {
   const pct = total ? Math.round((bought / total) * 100) : 0;
   return `<article class="card shop-card" data-shop-card data-total="${total}" data-hidden-done="${hiddenDone}">
     <button class="shop-card-head" type="button" data-go="${detailTab}" data-list="${list.id}">
-      <span class="grow">
-        <span class="title">${escapeHtml(list.title || placeLabel(list.place))}</span>
-        <span class="sub">${listDateLabel(list)}${tr("log.sep")}${placeLabel(list.place)}</span>
-      </span>
+      <span class="grow">${shopHeadLines(list)}</span>
       <span class="status-pill ${list.status === "done" ? "" : "watch"}">${list.status === "done" ? tr("shop.status.done") : tr("shop.status.open")}</span>
       ${icon("chevron", { size: 16 })}
     </button>
@@ -2168,7 +2282,7 @@ function shopCard(list, items, detailTab, ctx) {
 }
 
 function shopBrowser(lists, itemsOf, detailTab, emptyKey) {
-  const byDate = (a, b) => listDate(b).localeCompare(listDate(a)) || (b.createdAt || "").localeCompare(a.createdAt || "");
+  const byDate = compareShopLists;
   const sorted = lists.slice().sort(byDate);
   const seg = `<div class="seg" role="group" aria-label="${tr("shop.title")}">
     <button type="button" class="seg-btn ${ui.shopView === "list" ? "is-on" : ""}" data-action="shop-view" data-view="list" aria-pressed="${ui.shopView === "list"}">${tr("shop.view.list")}</button>
@@ -2328,11 +2442,10 @@ function viewShopDetail() {
   const items = itemsForList(list.id);
   return `
     <button class="linkish back-row" type="button" data-go="shop">${tr("shop.back")}</button>
-    <h1 class="screen-title">${escapeHtml(list.title || placeLabel(list.place))}</h1>
-    <p class="lede">${listDateLabel(list)}${tr("log.sep")}${placeLabel(list.place)}${list.note ? tr("log.sep") + escapeHtml(list.note) : ""}${tr("shop.detail.lede")}</p>
-    <label class="field" style="max-width:16rem"><span>${tr("shop.date")}</span>
-      <input type="date" data-action="list-date" data-list="${list.id}" value="${escapeHtml(listDate(list))}">
-    </label>
+    <header class="shop-detail-head">${shopHeadLines(list, { titleClass: "screen-title shop-line-date" })}</header>
+    ${list.note ? `<p class="tiny muted" style="margin:0 0 0.5rem">${escapeHtml(list.note)}</p>` : ""}
+    <p class="lede">${tr("shop.detail.lede")}</p>
+    ${shopDateFieldHtml({ value: listDate(list), action: "list-date", listId: list.id, name: "" })}
     <div class="btn-row">
       <button class="btn" type="button" data-action="item-new" data-list="${list.id}">${tr("shop.addItem")}</button>
       <button class="btn secondary" type="button" data-action="list-recipes-open" data-list="${list.id}">${icon("book", { size: 16 })}${tr("shop.pick.open")}</button>
@@ -2404,7 +2517,7 @@ let saveRev = 0;
 function shareSig(h) {
   const key = `${h.id}|${today()}`;
   if (sigMemo.rev === saveRev && sigMemo.key === key) return sigMemo.sig;
-  const recipes = (state.recipes || []).map((r) => ({ ...r, photo: r.photo ? "1" : "" }));
+  const recipes = (state.recipes || []).map((r) => ({ ...r, photo: recipePhotosOf(r).length ? "1" : "", photos: recipePhotosOf(r).length ? ["1"] : [] }));
   const p = sharePayloadFor(h, { recipes, menuShare: shareMenuWindow() });
   delete p.generatedAt;
   delete p.shareId;
@@ -2432,9 +2545,9 @@ async function buildShare({ h, pin, shareId, withDocs, maxLen = 0 }) {
     let payload = makePayload(recipesShare);
     let packed = await encryptShare(payload, pin);
     const limit = maxLen || (withDocs ? docsChars(shareDocs) * 1.4 : 0) + 400000;
-    if (packed.length > limit && recipesShare.some((r) => r.photo)) {
+    if (packed.length > limit && recipesShare.some((r) => r.photo || (r.photos || []).length)) {
       photosDropped = true;
-      recipesShare = recipesShare.map((r) => ({ ...r, photo: "" }));
+      recipesShare = recipesShare.map((r) => ({ ...r, photo: "", photos: [] }));
       payload = makePayload(recipesShare);
       packed = await encryptShare(payload, pin);
     }
@@ -3154,8 +3267,8 @@ function viewHelperShopDetail() {
   const catOf = (name) => (p.priceCatalog || []).find((c) => c.key === catalogKey(name));
   return `
     <button class="linkish back-row" type="button" data-go="h-shop">${tr("shop.back")}</button>
-    <h1 class="screen-title">${escapeHtml(list.title || placeLabel(list.place))}</h1>
-    <p class="lede">${listDateLabel(list)}${tr("log.sep")}${placeLabel(list.place)}${list.note ? tr("log.sep") + escapeHtml(list.note) : ""}${tr("period")}</p>
+    <header class="shop-detail-head">${shopHeadLines(list, { titleClass: "screen-title shop-line-date" })}</header>
+    ${list.note ? `<p class="tiny muted" style="margin:0 0 0.5rem">${escapeHtml(list.note)}</p>` : ""}
     ${items.length
       ? shopDetailForestHtml(items, (item) => {
           const cat = catOf(item.name);
@@ -3580,13 +3693,15 @@ function viewMenu() {
 }
 
 function menuShopAutoTitle(iso) {
-  const d = /^\d{4}-\d{2}-\d{2}$/.test(String(iso || "")) ? iso : today();
-  return tr("menu.gen.defaultTitle", { date: formatDate(d, { short: true }) });
+  if (isISODate(iso)) return tr("menu.gen.defaultTitle", { date: formatDate(iso, { short: true }) });
+  return tr("menu.gen.defaultTitleNone");
 }
 
 function isMenuShopAutoTitle(value) {
+  if (typeof value !== "string") return false;
+  if (value === tr("menu.gen.defaultTitleNone")) return true;
   const prefix = tr("menu.gen.defaultTitle", { date: "" });
-  if (typeof value !== "string" || !prefix || !value.startsWith(prefix)) return false;
+  if (!prefix || !value.startsWith(prefix)) return false;
   const rest = value.slice(prefix.length).trim();
   return /^\d{1,2}月\d{1,2}日$/.test(rest) || /^\d{1,2} [A-Za-z]{3}$/.test(rest);
 }
@@ -3624,7 +3739,7 @@ function recipeCards(list, ro) {
   return `<div class="recipe-grid">${list
     .map((r) => {
       const card = `<button class="recipe-card" type="button" data-go="${ro ? "h-recipe" : "recipe"}" data-recipe="${escapeHtml(r.id)}">
-        <span class="recipe-thumb">${r.photo ? `<img src="${r.photo}" alt="" loading="lazy">` : icon("utensils", { size: 26 })}<b class="recipe-no">#${r.no}</b>${r.builtin ? "" : `<i class="mine-dot" title="${tr("recipe.src.mine")}"></i>`}</span>
+        <span class="recipe-thumb">${recipePhotosOf(r)[0] ? `<img src="${recipePhotosOf(r)[0]}" alt="" loading="lazy">` : icon("utensils", { size: 26 })}<b class="recipe-no">#${r.no}</b>${r.builtin ? "" : `<i class="mine-dot" title="${tr("recipe.src.mine")}"></i>`}</span>
         <span class="recipe-meta"><strong>${recipeNameHtml(r)}</strong>
           <span class="recipe-sub">${escapeHtml(recipeMeta(r))}</span>
           <span class="recipe-tags">${dietBadges(r)}${r.sourceUrl ? `<em class="dtag d-web">${tr("recipe.web.badge")}</em>` : ""}</span>
@@ -3737,7 +3852,7 @@ function viewRecipe() {
   return `
     ${back}
     <article class="recipe-detail ${ro ? "is-helper" : ""}">
-      ${r.photo ? `<img class="recipe-hero" src="${r.photo}" alt="${escapeHtml(recipeName(r))}">` : ""}
+      ${recipeGalleryHtml(r)}
       <p class="recipe-id">${tr("recipe.id")} <b>#${r.no}</b>${r.builtin ? ` <span class="tag">${tr("recipe.src.lib")}</span>` : ""}</p>
       <h1 class="screen-title" style="margin-top:0.3rem">${recipeNameHtml(r)}</h1>
       <p class="lede" style="margin:0 0 0.4rem">${escapeHtml(recipeMeta(r))}${tr("log.sep")}${tr(`recipe.cat.${r.category}`)}</p>
@@ -3797,6 +3912,7 @@ function viewCook() {
     <article class="cook">
       <p class="recipe-id">${tr("recipe.id")} <b>#${r.no}</b></p>
       <h1 class="cook-title">${recipeNameHtml(r)}</h1>
+      ${recipePhotosOf(r)[0] ? `<img class="cook-hero" src="${recipePhotosOf(r)[0]}" alt="${escapeHtml(recipeName(r))}">` : ""}
       ${recipeLangSeg()}
       <div class="cook-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${step}"><b style="width:${pct}%"></b></div>
       <div class="card cook-body">${body}</div>
@@ -4093,16 +4209,7 @@ function menuSheetBody(sheet) {
           <label class="field"><span>${tr("recipe.f.prep")}</span><input name="prepMins" type="number" inputmode="numeric" min="0" max="1440" value="${r.prepMins || ""}" placeholder="20"></label>
           <label class="field"><span>${tr("recipe.f.servings")}</span><input name="servings" maxlength="20" value="${escapeHtml(r.servings)}" placeholder="${tr("recipe.f.servings.ph")}"></label>
         </div>
-        <div class="field">
-          <span>${tr("recipe.f.photo")}</span>
-          <div class="photo-row">
-            <button class="photo-btn" type="button" data-action="pick-recipe-photo" aria-label="${tr("recipe.photo.add")}">
-              ${ui.recipePhoto ? `<img src="${ui.recipePhoto}" alt="">` : icon("camera", { size: 22 })}
-            </button>
-            ${ui.recipePhoto ? `<button class="btn secondary small" type="button" data-action="recipe-photo-clear">${tr("recipe.photo.remove")}</button>` : ""}
-          </div>
-          <input type="file" accept="image/*" data-role="recipe-photo-input" hidden>
-        </div>
+        ${recipePhotoFieldHtml()}
         <label class="field"><span>${tr("recipe.f.ingZh")}</span><textarea name="ingZh" rows="6" placeholder="${tr("recipe.f.ingZh.ph")}">${escapeHtml(ingZh)}</textarea></label>
         <label class="field"><span>${tr("recipe.f.ingEn")}</span><textarea name="ingEn" rows="6" placeholder="${tr("recipe.f.ingEn.ph")}">${escapeHtml(ingEn)}</textarea></label>
         <label class="field"><span>${tr("recipe.f.stepsZh")}</span><textarea name="stepsZh" rows="6" placeholder="${tr("recipe.f.steps.ph")}">${escapeHtml(r.steps.map((s) => s.zh).join("\n"))}</textarea></label>
@@ -4130,6 +4237,7 @@ function menuSheetBody(sheet) {
       <form id="web-recipe-form">
         <label class="field"><span>${tr("recipe.web.url")}</span><input name="sourceUrl" type="text" inputmode="url" autocapitalize="none" autocomplete="off" spellcheck="false" required maxlength="600" value="${escapeHtml(d.url || "")}" placeholder="https://"></label>
         <label class="field"><span>${tr("recipe.web.name")}</span><input name="name" maxlength="80" value="${escapeHtml(d.name || "")}" placeholder="${tr("recipe.f.name.ph")}"></label>
+        ${recipePhotoFieldHtml()}
         <label class="field"><span>${tr("recipe.web.paste")}</span><textarea name="paste" rows="8" maxlength="12000" placeholder="${tr("recipe.web.paste.ph")}">${escapeHtml(d.text || "")}</textarea></label>
         <div class="btn-row">
           <button class="btn" type="submit">${tr("recipe.web.parse")}</button>
@@ -4143,7 +4251,7 @@ function menuSheetBody(sheet) {
     if (!r || !h) return `<h2>${tr("recipe.shop.title")}</h2><p class="muted">${tr("toast.addHelperFirst")}</p>`;
     const open = listsFor(h)
       .filter((l) => l.status !== "done")
-      .sort((a, b) => listDate(b).localeCompare(listDate(a)));
+      .sort(compareShopLists);
     const preferred = open.find((l) => listDate(l) === today()) || null;
     const nm = recipeName(r);
     return `
@@ -4154,7 +4262,7 @@ function menuSheetBody(sheet) {
         <label class="field"><span>${tr("recipe.shop.pick")}</span>
           <select name="list">
             <option value="new" ${preferred ? "" : "selected"}>${tr("recipe.shop.new", { name: escapeHtml(nm) })}</option>
-            ${open.map((l) => `<option value="${escapeHtml(l.id)}" ${preferred && preferred.id === l.id ? "selected" : ""}>${escapeHtml(l.title)}${tr("log.sep")}${formatDate(listDate(l), { short: true })}</option>`).join("")}
+            ${open.map((l) => `<option value="${escapeHtml(l.id)}" ${preferred && preferred.id === l.id ? "selected" : ""}>${escapeHtml(l.title)}${listDate(l) ? tr("log.sep") + formatDate(listDate(l), { short: true }) : ""}</option>`).join("")}
           </select>
         </label>
         <div class="field"><span>${tr("recipe.shop.items")}</span>
@@ -4188,7 +4296,7 @@ function menuSheetBody(sheet) {
             .join("")}</div>
         </div>
         <label class="field"><span>${tr("sheet.list.name")}</span><input name="title" required maxlength="80" data-autofill="menu-shop-title" value="${escapeHtml(menuShopAutoTitle(t))}"></label>
-        <label class="field"><span>${tr("shop.date")}</span><input type="date" name="date" required value="${escapeHtml(t)}" data-action="gen-shop-date"></label>
+        ${shopDateFieldHtml({ name: "date", value: t, action: "gen-shop-date" })}
         <label class="switch-field">
           <span><strong>${tr("menu.gen.group")}</strong><span class="hint">${tr("menu.gen.group.hint")}</span></span>
           <span class="switch"><input type="checkbox" name="group" checked><span></span></span>
@@ -4364,7 +4472,7 @@ function sheetHtml() {
       <h2>${tr("sheet.list.title")}</h2>
       <form id="shop-list-form">
         <label class="field"><span>${tr("sheet.list.name")}</span><input name="title" required maxlength="80" placeholder="${tr("sheet.list.name.ph")}"></label>
-        <label class="field"><span>${tr("shop.date")}</span><input type="date" name="date" required value="${escapeHtml(sheet.date || today())}"></label>
+        ${shopDateFieldHtml({ name: "date", value: sheet.date || today() })}
         <label class="field"><span>${tr("sheet.list.place")}</span>
           <select name="place">
             ${SHOP_PLACES.map((p) => `<option value="${p.id}">${pick(p)}</option>`).join("")}
@@ -5165,6 +5273,8 @@ async function onClick(ev) {
     return;
   }
   if (role !== "helper" && action === "web-open-sheet") {
+    setRecipePhotos([]);
+    ui.recipePhotoReplace = null;
     ui.sheet = { type: "web-recipe", prefill: { name: act.getAttribute("data-q") || "" } };
     render();
     return;
@@ -5308,14 +5418,16 @@ async function onClick(ev) {
     return;
   }
   if (role !== "helper" && action === "recipe-new") {
-    ui.recipePhoto = "";
+    setRecipePhotos([]);
+    ui.recipePhotoReplace = null;
     ui.sheet = { type: "recipe" };
     render();
     return;
   }
   if (role !== "helper" && action === "recipe-edit") {
     const r = state.recipes.find((x) => x.id === id);
-    ui.recipePhoto = r?.photo || "";
+    setRecipePhotos(recipePhotosOf(r));
+    ui.recipePhotoReplace = null;
     ui.sheet = { type: "recipe", id };
     render();
     return;
@@ -5330,12 +5442,42 @@ async function onClick(ev) {
     return;
   }
   if (action === "pick-recipe-photo") {
+    ui.recipePhotoReplace = null;
+    document.querySelector("[data-role=recipe-photo-input]")?.click();
+    return;
+  }
+  if (action === "replace-recipe-photo") {
+    ui.recipePhotoReplace = Number(act.getAttribute("data-i"));
     document.querySelector("[data-role=recipe-photo-input]")?.click();
     return;
   }
   if (action === "recipe-photo-clear") {
-    ui.recipePhoto = "";
+    setRecipePhotos([]);
+    ui.recipePhotoReplace = null;
     render();
+    return;
+  }
+  if (action === "recipe-photo-remove") {
+    const i = Number(act.getAttribute("data-i"));
+    const photos = currentRecipePhotos().filter((_, idx) => idx !== i);
+    setRecipePhotos(photos);
+    ui.recipePhotoReplace = null;
+    render();
+    return;
+  }
+  if (action === "clear-shop-date") {
+    const listId = act.getAttribute("data-list");
+    if (listId) {
+      const list = state.shopLists.find((l) => l.id === listId);
+      if (list) {
+        list.date = "";
+        save();
+        render();
+      }
+      return;
+    }
+    const input = act.closest(".shop-date-field, .field")?.querySelector("input[type=date]") || act.parentElement?.querySelector("input[type=date]");
+    applyClearedShopDateInput(input);
     return;
   }
   if (role !== "helper" && action === "recipe-menu") {
@@ -5706,21 +5848,23 @@ async function onChange(ev) {
   if (action === "gen-shop-date") {
     const form = el.closest("#gen-form");
     const title = form?.elements?.title;
-    const iso = String(el.value || "");
-    if (title && /^\d{4}-\d{2}-\d{2}$/.test(iso) && isMenuShopAutoTitle(title.value)) {
-      title.value = menuShopAutoTitle(iso);
-    }
+    const iso = parseShopDateInput(el.value);
+    syncClearDateButton(el);
+    if (title && isMenuShopAutoTitle(title.value)) title.value = menuShopAutoTitle(iso);
     return;
   }
 
   if (action === "list-date") {
     const list = state.shopLists.find((l) => l.id === el.getAttribute("data-list"));
-    if (!list || !/^\d{4}-\d{2}-\d{2}$/.test(el.value)) return;
-    list.date = el.value;
-    for (const c of state.priceCatalog) for (const e of c.history || []) if (e.listId === list.id) e.date = list.date;
-    state.priceCatalog = normalizeCatalog(state.priceCatalog);
+    const iso = parseShopDateInput(el.value);
+    if (!list) return;
+    list.date = iso;
+    if (iso) {
+      for (const c of state.priceCatalog) for (const e of c.history || []) if (e.listId === list.id) e.date = iso;
+      state.priceCatalog = normalizeCatalog(state.priceCatalog);
+      setShopCalFromDate(iso);
+    }
     save();
-    ui.shopCal = { year: Number(list.date.slice(0, 4)), month: Number(list.date.slice(5, 7)) - 1 };
     render();
     return;
   }
@@ -5738,7 +5882,16 @@ async function onChange(ev) {
   }
   if (el.getAttribute("data-role") === "recipe-photo-input" && el.files?.[0]) {
     try {
-      ui.recipePhoto = await compressImageFile(el.files[0], { maxSize: 800, quality: 0.7 });
+      const files = [...el.files].filter(Boolean);
+      const photos = currentRecipePhotos();
+      const replaceAt = Number.isInteger(ui.recipePhotoReplace) ? ui.recipePhotoReplace : null;
+      for (let i = 0; i < files.length; i++) {
+        const dataUrl = await compressImageFile(files[i], { maxSize: 1280, quality: 0.7 });
+        if (i === 0 && replaceAt != null && replaceAt >= 0 && replaceAt < photos.length) photos[replaceAt] = dataUrl;
+        else if (photos.length < MAX_RECIPE_PHOTOS) photos.push(dataUrl);
+      }
+      setRecipePhotos(photos);
+      ui.recipePhotoReplace = null;
       render();
     } catch (err) {
       toast(err.message || tr("toast.photoFailed"));
@@ -6113,8 +6266,9 @@ function onSubmit(ev) {
       steps: parsed.steps,
       tips: parsed.tips,
       sourceUrl: url,
+      photos: currentRecipePhotos(),
+      photo: currentRecipePhotos()[0] || "",
     });
-    ui.recipePhoto = "";
     ui.sheet = { type: "recipe", draft: true };
     render();
     toast(parsed.ingredients.length || parsed.steps.length ? tr("recipe.web.parsed", { i: parsed.ingredients.length, s: parsed.steps.length }) : tr("recipe.web.nothing"));
@@ -6151,7 +6305,8 @@ function onSubmit(ev) {
       category: String(fd.get("category") || "other"),
       difficulty: String(fd.get("difficulty") || "easy"),
       prepMins: Number(fd.get("prepMins")) || 0,
-      photo: ui.recipePhoto || "",
+      photo: currentRecipePhotos()[0] || "",
+      photos: currentRecipePhotos(),
       servings: String(fd.get("servings") || "").trim().slice(0, 20),
       ingredients,
       steps,
@@ -6172,7 +6327,8 @@ function onSubmit(ev) {
       return;
     }
     ui.sheet = null;
-    ui.recipePhoto = "";
+    setRecipePhotos([]);
+    ui.recipePhotoReplace = null;
     ui.recipeDraft = null;
     ui.recipeId = id;
     if (ui.tab !== "recipe") setTab("recipe");
@@ -6196,7 +6352,7 @@ function onSubmit(ev) {
     if (!save()) return;
     ui.sheet = null;
     ui.shopListId = list.id;
-    ui.shopCal = { year: Number(listDate(list).slice(0, 4)), month: Number(listDate(list).slice(5, 7)) - 1 };
+    setShopCalFromDate(listDate(list));
     setTab("shop-detail");
     addResultToast(res, list);
     return;
@@ -6225,7 +6381,7 @@ function onSubmit(ev) {
       }
     }
     if (!entries.length) return toast(tr("menu.gen.none"));
-    const dateVal = /^\d{4}-\d{2}-\d{2}$/.test(String(fd.get("date") || "")) ? String(fd.get("date")) : today();
+    const dateVal = parseShopDateInput(fd.get("date"));
     const list = newShopList({ helperId: h.id, title: String(fd.get("title") || "").trim() || menuShopAutoTitle(dateVal), place: "market", date: dateVal });
     state.shopLists.push(list);
     const byId = new Map();
@@ -6241,7 +6397,7 @@ function onSubmit(ev) {
     ui.sheet = null;
     ui.shopListId = list.id;
     ui.shopView = "list";
-    ui.shopCal = { year: Number(dateVal.slice(0, 4)), month: Number(dateVal.slice(5, 7)) - 1 };
+    setShopCalFromDate(dateVal);
     setTab("shop-detail");
     addResultToast(res, list);
     if (noRecipe) setTimeout(() => toast(tr("menu.gen.skipped", { n: noRecipe })), 3000);
@@ -6350,12 +6506,12 @@ function onSubmit(ev) {
       title: String(fd.get("title") || "").trim(),
       place: String(fd.get("place") || "market"),
       note: String(fd.get("note") || "").trim(),
-      date: /^\d{4}-\d{2}-\d{2}$/.test(String(fd.get("date") || "")) ? String(fd.get("date")) : today(),
+      date: parseShopDateInput(fd.get("date")),
     });
     state.shopLists.push(rec);
     const picks = fd.getAll("rpick").map(String);
     const res = picks.length ? addRecipesToList(rec, picks) : null;
-    ui.shopCal = { year: Number(rec.date.slice(0, 4)), month: Number(rec.date.slice(5, 7)) - 1 };
+    setShopCalFromDate(rec.date);
     save();
     ui.sheet = null;
     ui.shopListId = rec.id;

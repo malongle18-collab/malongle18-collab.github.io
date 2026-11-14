@@ -576,7 +576,11 @@ h2 {
 .helper-switcher {
   display: flex;
   gap: 0.4rem;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
   margin: 0 0 0.85rem;
   padding-bottom: 0.15rem;
   -webkit-overflow-scrolling: touch;
@@ -991,6 +995,8 @@ input[type="search"],
 textarea,
 select {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: var(--tap);
   padding: 0.5rem 0.8rem;
   border: 0;
@@ -1257,10 +1263,15 @@ textarea::placeholder {
   left: 0;
   right: 0;
   bottom: 0;
-  max-width: 44rem;
+  width: 100%;
+  max-width: min(44rem, 100%);
   margin: 0 auto;
   max-height: min(88dvh, 44rem);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
+  min-width: 0;
   background: var(--bg);
   border-radius: 1.15rem 1.15rem 0 0;
   padding: 0.7rem var(--pad-x) calc(1.1rem + var(--safe-b));
@@ -3110,7 +3121,10 @@ h2 {
 .photo-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.7rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .search {
@@ -3198,9 +3212,11 @@ input:not([type]) {
     left: 50%;
     right: auto;
     width: min(36rem, calc(100vw - 4rem));
-    max-width: none;
+    max-width: min(36rem, calc(100vw - 4rem));
     margin: 0;
     max-height: min(84vh, 46rem);
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
     transform: translate(-50%, -50%);
     border-radius: 1.2rem;
     padding: 1.4rem 1.6rem 1.5rem;
@@ -3283,8 +3299,10 @@ input:not([type]) {
 .shop-card { padding: 0.8rem 0.9rem; min-width: 0; }
 .shop-card-head { display: flex; align-items: center; gap: 0.6rem; width: 100%; text-align: left; padding: 0; }
 .shop-card-head .grow { display: flex; flex-direction: column; min-width: 0; gap: 0.1rem; }
-.shop-card-head .title { font-weight: 700; overflow-wrap: anywhere; }
-.shop-card-head .sub { font-size: 0.82rem; color: var(--ink-3); }
+.shop-card-head .shop-line-date,
+.shop-card-head .title { font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+.shop-card-head .shop-line-meta,
+.shop-card-head .sub { font-size: 0.82rem; font-weight: 400; color: var(--ink-2); overflow-wrap: anywhere; }
 .shop-prog-row { display: flex; align-items: center; gap: 0.7rem; margin: 0.55rem 0 0.3rem; }
 .shop-prog { font-weight: 700; font-size: 0.85rem; color: var(--pine); white-space: nowrap; }
 .prog-bar { flex: 1; height: 0.4rem; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
@@ -3643,4 +3661,135 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 }
 .meal-slot > .swipe-row .dish {
   width: 100%;
+}
+
+
+/* ===== v16: shop date typography, clearable date, overflow lock, recipe photos ===== */
+html, body, #app, .shell, .content-col, .main, .main-inner, .sheet, .sheet-back, .payslip-layer {
+  max-width: 100%;
+  min-width: 0;
+  overscroll-behavior-x: none;
+}
+html, body, #app, .shell, .main, .sheet, .sheet-back, .payslip-layer {
+  overflow-x: hidden;
+}
+.sheet form,
+.sheet .field,
+.sheet .field-row,
+.sheet .btn-row,
+.sheet .chip-row,
+.sheet .ing-pick,
+.sheet .recipe-picker,
+.sheet .pick-list,
+.sheet .slot-list,
+.sheet .slot-row,
+.sheet .diet-grid {
+  max-width: 100%;
+  min-width: 0;
+}
+.chip-row, .filter-row, .btn-row, .cal, .tabbar, .lang-switch {
+  max-width: 100%;
+  min-width: 0;
+}
+.chip-row, .filter-row { flex-wrap: wrap; }
+.swipe-row {
+  max-width: 100%;
+  overscroll-behavior-x: none;
+}
+
+.shop-date-field { max-width: 100%; }
+.shop-date-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.shop-date-row input[type="date"] {
+  flex: 1 1 10rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.shop-date-clear {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.shop-detail-head { min-width: 0; max-width: 100%; }
+.shop-detail-head .shop-line-date,
+.shop-detail-head .shop-line-meta { display: block; }
+.shop-detail-head .shop-line-date {
+  color: var(--ink);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  margin-bottom: 0.2rem;
+}
+.shop-detail-head .shop-line-meta {
+  margin: 0 0 0.45rem;
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+.shop-date-clear[hidden] { display: none !important; }
+.shop-detail-head .lede { margin-top: 0; }
+
+.recipe-photo-chip {
+  position: relative;
+  flex: 0 0 auto;
+}
+.recipe-photo-chip .photo-btn,
+.photo-btn.is-add {
+  width: 4.4rem;
+  height: 4.4rem;
+}
+.recipe-photo-chip .photo-del {
+  position: absolute;
+  top: -0.35rem;
+  right: -0.35rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  min-height: 0;
+}
+.recipe-photos-hint { margin: 0.25rem 0 0; }
+.recipe-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 0.8rem;
+}
+.recipe-gallery .recipe-hero { margin-top: 0; }
+.recipe-gallery-rest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.recipe-gallery-rest img {
+  width: 4.4rem;
+  height: 4.4rem;
+  object-fit: cover;
+  border-radius: 0.7rem;
+}
+.cook-hero {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: 12rem;
+  object-fit: cover;
+  border-radius: 1rem;
+  margin: 0.5rem 0 0.8rem;
 }
