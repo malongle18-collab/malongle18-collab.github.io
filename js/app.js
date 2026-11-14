@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=18";
+} from "./data.js?v=19";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=18";
-import { escapeHtml, icon } from "./icons.js?v=18";
+} from "./dates.js?v=19";
+import { escapeHtml, icon } from "./icons.js?v=19";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=18";
+} from "./reminders.js?v=19";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=18";
+} from "./rules.js?v=19";
 import {
   arrangedRestList,
   currentHelper,
@@ -102,7 +102,7 @@ import {
   moveNavTab,
   isShopGroupCollapsed,
   setShopGroupCollapsed,
-} from "./storage.js?v=18";
+} from "./storage.js?v=19";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -128,7 +128,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=18";
+} from "./share.js?v=19";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -143,7 +143,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=18";
+} from "./docs.js?v=19";
 import {
   CATEGORIES,
   DIET_KEYS,
@@ -185,6 +185,9 @@ import {
   recipeNoLabel,
   recipeShareText,
   recipePhotosOf,
+  recipePhotoSrc,
+  recipePhotoCreditInfo,
+  isLibraryPhotoPath,
   MAX_RECIPE_PHOTOS,
   isRecipePhoto,
   recipesForShare,
@@ -196,9 +199,9 @@ import {
   urlHost,
   weekDates,
   webSearchUrls,
-} from "./menu.js?v=18";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=18";
-import { initSwipe } from "./swipe-delete.js?v=18";
+} from "./menu.js?v=19";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=19";
+import { initSwipe } from "./swipe-delete.js?v=19";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -2054,7 +2057,7 @@ function recipePhotoFieldHtml() {
     .map(
       (src, i) => `<div class="recipe-photo-chip">
         <button class="photo-btn" type="button" data-action="replace-recipe-photo" data-i="${i}" aria-label="${tr("recipe.photo.replace")}">
-          <img src="${src}" alt="">
+          <img src="${recipePhotoSrc(src)}" alt="">
         </button>
         <button class="photo-del" type="button" data-action="recipe-photo-remove" data-i="${i}" aria-label="${tr("recipe.photo.remove")}">×</button>
       </div>`
@@ -2071,13 +2074,27 @@ function recipePhotoFieldHtml() {
   </div>`;
 }
 
+function recipePhotoCreditHtml(r) {
+  const c = recipePhotoCreditInfo(r);
+  if (!c) return "";
+  if (c.illustrative) return `<p class="recipe-photo-credit">${escapeHtml(tr("recipe.photo.credit.illustrative"))}</p>`;
+  const name = c.author || c.source || "";
+  const bits = [name];
+  if (c.source) bits.push(c.source);
+  if (c.license) bits.push(c.license);
+  const credit = bits.filter(Boolean).join(getLang() === "en" ? ", " : "，");
+  if (!credit) return "";
+  return `<p class="recipe-photo-credit">${escapeHtml(tr("recipe.photo.credit", { credit }))}</p>`;
+}
+
 function recipeGalleryHtml(r, className = "recipe-hero") {
   const photos = recipePhotosOf(r);
   if (!photos.length) return "";
   const rest = photos.slice(1);
   return `<div class="recipe-gallery">
-    <img class="${className}" src="${photos[0]}" alt="${escapeHtml(recipeName(r))}">
-    ${rest.length ? `<div class="recipe-gallery-rest">${rest.map((src) => `<img src="${src}" alt="">`).join("")}</div>` : ""}
+    <img class="${className}" src="${recipePhotoSrc(photos[0])}" alt="${escapeHtml(recipeName(r))}">
+    ${recipePhotoCreditHtml(r)}
+    ${rest.length ? `<div class="recipe-gallery-rest">${rest.map((src) => `<img src="${recipePhotoSrc(src)}" alt="">`).join("")}</div>` : ""}
   </div>`;
 }
 
@@ -2551,7 +2568,10 @@ async function buildShare({ h, pin, shareId, withDocs, maxLen = 0 }) {
     const limit = maxLen || (withDocs ? docsChars(shareDocs) * 1.4 : 0) + 400000;
     if (packed.length > limit && recipesShare.some((r) => r.photo || (r.photos || []).length)) {
       photosDropped = true;
-      recipesShare = recipesShare.map((r) => ({ ...r, photo: "", photos: [] }));
+      recipesShare = recipesShare.map((r) => {
+        const keep = (r.photos || []).filter(isLibraryPhotoPath);
+        return { ...r, photo: keep[0] || "", photos: keep };
+      });
       payload = makePayload(recipesShare);
       packed = await encryptShare(payload, pin);
     }
@@ -3743,7 +3763,7 @@ function recipeCards(list, ro) {
   return `<div class="recipe-grid">${list
     .map((r) => {
       const card = `<button class="recipe-card" type="button" data-go="${ro ? "h-recipe" : "recipe"}" data-recipe="${escapeHtml(r.id)}">
-        <span class="recipe-thumb">${recipePhotosOf(r)[0] ? `<img src="${recipePhotosOf(r)[0]}" alt="" loading="lazy">` : icon("utensils", { size: 26 })}<b class="recipe-no">#${r.no}</b>${r.builtin ? "" : `<i class="mine-dot" title="${tr("recipe.src.mine")}"></i>`}</span>
+        <span class="recipe-thumb">${recipePhotosOf(r)[0] ? `<img src="${recipePhotoSrc(recipePhotosOf(r)[0])}" alt="" loading="lazy">` : icon("utensils", { size: 26 })}<b class="recipe-no">#${r.no}</b>${r.builtin ? "" : `<i class="mine-dot" title="${tr("recipe.src.mine")}"></i>`}</span>
         <span class="recipe-meta"><strong>${recipeNameHtml(r)}</strong>
           <span class="recipe-sub">${escapeHtml(recipeMeta(r))}</span>
           <span class="recipe-tags">${dietBadges(r)}${r.overrideOf ? `<em class="dtag d-edited">${tr("recipe.edited")}</em>` : ""}${r.sourceUrl ? `<em class="dtag d-web">${tr("recipe.web.badge")}</em>` : ""}</span>
@@ -3917,7 +3937,7 @@ function viewCook() {
     <article class="cook">
       <p class="recipe-id">${tr("recipe.id")} <b>#${r.no}</b></p>
       <h1 class="cook-title">${recipeNameHtml(r)}</h1>
-      ${recipePhotosOf(r)[0] ? `<img class="cook-hero" src="${recipePhotosOf(r)[0]}" alt="${escapeHtml(recipeName(r))}">` : ""}
+      ${recipePhotosOf(r)[0] ? `<img class="cook-hero" src="${recipePhotoSrc(recipePhotosOf(r)[0])}" alt="${escapeHtml(recipeName(r))}">${recipePhotoCreditHtml(r)}` : ""}
       ${recipeLangSeg()}
       <div class="cook-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${step}"><b style="width:${pct}%"></b></div>
       <div class="card cook-body">${body}</div>

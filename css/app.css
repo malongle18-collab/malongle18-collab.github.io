@@ -3794,3 +3794,16 @@ html, body, #app, .shell, .main, .sheet, .sheet-back, .payslip-layer {
   border-radius: 1rem;
   margin: 0.5rem 0 0.8rem;
 }
+
+.recipe-photo-credit {
+  margin: 0.3rem 0 0;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--ink-2);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.cook .recipe-photo-credit {
+  margin: 0.25rem 0 0.7rem;
+}
