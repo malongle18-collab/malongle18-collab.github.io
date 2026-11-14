@@ -1,4 +1,4 @@
-import { getLang } from "./i18n.js?v=13";
+import { getLang } from "./i18n.js?v=14";
 
 /** Local-date helpers. All ISO strings are calendar dates in the user's local zone (Hong Kong). */
 
