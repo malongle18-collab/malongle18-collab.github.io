@@ -913,6 +913,7 @@ export const zhHant = {
   "more.leave.sub": "休息日、年假與法定假日",
   "shop.recipe.progress": "{done}／{total} 項材料",
   "shop.recipe.delete": "刪除這道菜及材料",
+  "shop.recipe.deleteConfirm": "確定刪除「{name}」及底下全部材料？",
   "shop.recipe.collapse": "收起「{name}」的材料",
   "shop.recipe.expand": "展開「{name}」的材料",
   "shop.recipe.tickAll": "將「{name}」全部材料標為已買",

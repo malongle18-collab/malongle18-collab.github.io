@@ -913,6 +913,7 @@ export const en = {
   "more.leave.sub": "Rest days, annual leave and statutory holidays",
   "shop.recipe.progress": "{done}/{total} ingredients",
   "shop.recipe.delete": "Remove this dish and its ingredients",
+  "shop.recipe.deleteConfirm": "Delete “{name}” and all of its ingredients?",
   "shop.recipe.collapse": "Hide ingredients of {name}",
   "shop.recipe.expand": "Show ingredients of {name}",
   "shop.recipe.tickAll": "Mark all ingredients of {name} as bought",
