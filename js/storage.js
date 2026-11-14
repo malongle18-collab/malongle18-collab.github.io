@@ -1,5 +1,6 @@
-import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=7";
-import { defaultContractEnd } from "./rules.js?v=7";
+import { getLang, t } from "./i18n.js?v=8";
+import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=8";
+import { defaultContractEnd } from "./rules.js?v=8";
 
 export const STORAGE_KEY = "fdh-employer-v1";
 
@@ -38,7 +39,7 @@ export function demoHelper() {
   return blankHelper({
     ...DEMO_HELPER,
     id: uid("helper"),
-    notes: DEMO_HELPER.notes,
+    notes: getLang() === "en" ? DEMO_HELPER.notesEn : DEMO_HELPER.notes,
   });
 }
 
@@ -99,7 +100,7 @@ export function loadState() {
     if (!raw) return emptyState();
     return migrate(JSON.parse(raw));
   } catch (err) {
-    console.warn("無法讀取本機資料", err);
+    console.warn("Could not read local data", err);
     return emptyState();
   }
 }
@@ -126,14 +127,14 @@ export function exportBackup(state) {
     { type: "application/json" }
   );
   const stamp = new Date().toISOString().slice(0, 10);
-  return { blob, filename: `外傭僱傭助手-備份-${stamp}.json` };
+  return { blob, filename: `${t("backup.filename")}-${stamp}.json` };
 }
 
 export function importBackup(text) {
   const parsed = JSON.parse(text);
   const data = parsed.data || parsed.state || parsed;
-  if (!data || typeof data !== "object") throw new Error("檔案格式不正確");
-  if (!Array.isArray(data.helpers)) throw new Error("找不到外傭資料");
+  if (!data || typeof data !== "object") throw new Error(t("err.fileFormat"));
+  if (!Array.isArray(data.helpers)) throw new Error(t("err.noHelpers"));
   return migrate(data);
 }
 

@@ -1,9 +1,10 @@
+import { t as tr } from "./i18n.js?v=8";
 import {
   ANNUAL_LEAVE_BY_YEAR,
   GENERAL_HOLIDAYS,
   REST_DAY_ARRANGED,
   STATUTORY_HOLIDAYS,
-} from "./data.js?v=7";
+} from "./data.js?v=8";
 import {
   addDays,
   addMonths,
@@ -13,7 +14,7 @@ import {
   parseISO,
   toISO as formatISO,
   weekday,
-} from "./dates.js?v=7";
+} from "./dates.js?v=8";
 
 /** Standard ID 407 term is two years. Default end date is the day before the 2-year anniversary. */
 export function defaultContractEnd(startISO) {
@@ -90,6 +91,7 @@ export function resolveStatutoryHoliday(raw, winterChoice = "christmas") {
       winter: raw.winter,
       christmas: raw.christmas,
       noteZh: "冬節或聖誕節由僱主選擇其中一天作為法定假日",
+      noteEn: "The employer chooses either Winter Solstice or Christmas Day as the statutory holiday",
     };
   }
   return { ...raw };
@@ -161,25 +163,25 @@ export function contractStatus(helper, today) {
   const start = helper.contractStart || helper.startDate;
   const end = helper.contractEnd;
   if (!start || !end) {
-    return { key: "unknown", label: "尚未填寫合約日期", daysLeft: null, progress: 0, total: 0 };
+    return { key: "unknown", label: tr("contract.unknown"), daysLeft: null, progress: 0, total: 0 };
   }
   const total = Math.max(1, daysBetween(start, end));
   const elapsed = daysBetween(start, today);
   const daysLeft = daysBetween(today, end);
   const progress = Math.min(1, Math.max(0, elapsed / total));
   if (daysLeft < 0) {
-    return { key: "expired", label: "合約已屆滿", daysLeft, progress: 1, total, start, end };
+    return { key: "expired", label: tr("contract.expired"), daysLeft, progress: 1, total, start, end };
   }
   if (daysLeft <= 7) {
-    return { key: "critical", label: "即將屆滿（7天內）", daysLeft, progress, total, start, end };
+    return { key: "critical", label: tr("contract.critical"), daysLeft, progress, total, start, end };
   }
   if (daysLeft <= 30) {
-    return { key: "soon", label: "即將屆滿（30天內）", daysLeft, progress, total, start, end };
+    return { key: "soon", label: tr("contract.soon"), daysLeft, progress, total, start, end };
   }
   if (daysLeft <= 90) {
-    return { key: "watch", label: "準備續約或結束", daysLeft, progress, total, start, end };
+    return { key: "watch", label: tr("contract.watch"), daysLeft, progress, total, start, end };
   }
-  return { key: "ok", label: "合約進行中", daysLeft, progress, total, start, end };
+  return { key: "ok", label: tr("contract.ok"), daysLeft, progress, total, start, end };
 }
 
 export function proRataMonthly(amount, year, monthIndex, fromDay, toDay) {
