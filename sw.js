@@ -1,25 +1,31 @@
-const CACHE = "fdh-household-pages-v7";
+const CACHE = "fdh-household-pages-v8";
 const ASSETS = [
   "./",
   "./index.html",
   "./css/app.css",
-  "./css/app.css?v=7",
+  "./css/app.css?v=8",
   "./js/app.js",
-  "./js/app.js?v=7",
+  "./js/app.js?v=8",
   "./js/data.js",
-  "./js/data.js?v=7",
+  "./js/data.js?v=8",
   "./js/dates.js",
-  "./js/dates.js?v=7",
+  "./js/dates.js?v=8",
   "./js/rules.js",
-  "./js/rules.js?v=7",
+  "./js/rules.js?v=8",
   "./js/storage.js",
-  "./js/storage.js?v=7",
+  "./js/storage.js?v=8",
   "./js/reminders.js",
-  "./js/reminders.js?v=7",
+  "./js/reminders.js?v=8",
+  "./js/i18n.js",
+  "./js/i18n.js?v=8",
+  "./js/i18n-zh.js",
+  "./js/i18n-zh.js?v=8",
+  "./js/i18n-en.js",
+  "./js/i18n-en.js?v=8",
   "./js/icons.js",
-  "./js/icons.js?v=7",
+  "./js/icons.js?v=8",
   "./js/share.js",
-  "./js/share.js?v=7",
+  "./js/share.js?v=8",
   "./manifest.webmanifest",
   "./icons/favicon.svg"
 ];
@@ -28,7 +34,7 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.addAll(ASSETS))
+      .then((cache) => cache.addAll(ASSETS.map((u) => new Request(u, { cache: "reload" }))))
       .then(() => self.skipWaiting())
   );
 });
@@ -60,7 +66,7 @@ self.addEventListener("fetch", (event) => {
     url.pathname.endsWith("/index.html");
   if (networkFirst) {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: "no-cache" })
         .then((res) => {
           if (res && res.ok) {
             const copy = res.clone();

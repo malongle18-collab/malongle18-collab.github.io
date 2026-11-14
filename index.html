@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="zh-HK">
+<html lang="zh-Hant-HK">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="light dark">
-    <meta name="theme-color" content="#194350" media="(prefers-color-scheme: light)">
-    <meta name="theme-color" content="#10262C" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#17684d" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0f3d2e" media="(prefers-color-scheme: dark)">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,23 +17,92 @@
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./icons/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
-    <link rel="stylesheet" href="./css/app.css?v=7">
+    <link rel="stylesheet" href="./css/app.css?v=8">
   </head>
   <body>
     <div id="app">
-      <p id="boot-msg" style="margin:0;padding:2rem 1.2rem;font-family:system-ui,sans-serif;color:#194350;background:#f3f6f6;min-height:100vh;box-sizing:border-box;">載入中…</p>
-      <noscript>請開啟 JavaScript 以使用外傭僱傭助手。</noscript>
+      <p id="boot-msg" style="margin:0;padding:2rem 1.2rem;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#202b27;background:#f7f7f2;min-height:100vh;box-sizing:border-box;">載入中…</p>
+      <noscript id="boot-noscript">請開啟 JavaScript 以使用外傭僱傭助手。 / Please enable JavaScript to use FDH Household Helper.</noscript>
     </div>
-    <script type="module" src="./js/app.js?v=7"></script>
+    <script type="module" src="./js/app.js?v=8"></script>
     <script>
-      window.addEventListener("load", function () {
-        setTimeout(function () {
-          var el = document.getElementById("boot-msg");
-          if (el) {
-            el.textContent = "載入唔到。請用無痕視窗開啟呢個網站，或喺瀏覽器清除此網站的資料後再試。";
+      (function () {
+        var T = {
+          "zh-Hant": {
+            title: "外傭僱傭助手",
+            loading: "載入中…",
+            fail: "載入唔到。請先按「更新至最新版本」（只會清走舊快取，不會刪除已儲存嘅外傭記錄），或用無痕視窗開啟。請唔好清除此網站嘅資料。",
+            update: "更新至最新版本",
+            reload: "重新整理"
+          },
+          en: {
+            title: "FDH Household Helper",
+            loading: "Loading…",
+            fail: "The page could not load. Try “Update to latest version” (it only removes old cached files and does not delete your saved helper records), or open the site in a private window. Please do not clear this site’s data.",
+            update: "Update to latest version",
+            reload: "Reload"
           }
-        }, 4000);
-      });
+        };
+        var lang = "";
+        try {
+          var saved = localStorage.getItem("fdh-lang-v1");
+          if (saved === "zh-Hant" || saved === "en") lang = saved;
+        } catch (e) {}
+        if (!lang) {
+          var list = [];
+          try {
+            if (navigator.languages && navigator.languages.length) list = Array.prototype.slice.call(navigator.languages);
+            if (navigator.language) list.push(navigator.language);
+          } catch (e) {}
+          lang = list.length ? "en" : "zh-Hant";
+          for (var i = 0; i < list.length; i++) {
+            var tag = String(list[i] || "").toLowerCase();
+            if (tag.indexOf("zh") === 0 || tag === "yue" || tag.indexOf("yue-") === 0) { lang = "zh-Hant"; break; }
+            if (tag === "en" || tag.indexOf("en-") === 0) { lang = "en"; break; }
+          }
+        }
+        var tx = T[lang];
+        document.documentElement.lang = lang === "en" ? "en" : "zh-Hant-HK";
+        document.title = tx.title;
+        var boot = document.getElementById("boot-msg");
+        if (boot) boot.textContent = tx.loading;
+        function forceUpdate() {
+          var jobs = [];
+          try {
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              jobs.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+                return Promise.all(regs.map(function (r) { return r.unregister(); }));
+              }));
+            }
+            if (window.caches && caches.keys) {
+              jobs.push(caches.keys().then(function (keys) {
+                return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+              }));
+            }
+          } catch (e) {}
+          Promise.all(jobs).catch(function () {}).then(function () { location.reload(); });
+        }
+        window.addEventListener("load", function () {
+          setTimeout(function () {
+            var el = document.getElementById("boot-msg");
+            if (!el) return;
+            el.textContent = tx.fail;
+            var row = document.createElement("div");
+            row.style.cssText = "margin-top:1rem;display:flex;gap:.6rem;flex-wrap:wrap";
+            function mk(label, fn, primary) {
+              var b = document.createElement("button");
+              b.type = "button";
+              b.textContent = label;
+              b.style.cssText = "font:inherit;padding:.65rem 1rem;border-radius:12px;border:1px solid #17684d;cursor:pointer;" + (primary ? "background:#17684d;color:#fff" : "background:#fff;color:#17684d");
+              b.addEventListener("click", fn);
+              return b;
+            }
+            row.appendChild(mk(tx.update, forceUpdate, true));
+            row.appendChild(mk(tx.reload, function () { location.reload(); }, false));
+            el.appendChild(row);
+          }, 4000);
+        });
+      })();
     </script>
   </body>
 </html>
