@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=20";
+} from "./data.js?v=21";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=20";
-import { escapeHtml, icon } from "./icons.js?v=20";
+} from "./dates.js?v=21";
+import { escapeHtml, icon } from "./icons.js?v=21";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=20";
+} from "./reminders.js?v=21";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=20";
+} from "./rules.js?v=21";
 import {
   arrangedRestList,
   currentHelper,
@@ -102,7 +102,7 @@ import {
   moveNavTab,
   isShopGroupCollapsed,
   setShopGroupCollapsed,
-} from "./storage.js?v=20";
+} from "./storage.js?v=21";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -128,7 +128,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=20";
+} from "./share.js?v=21";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -143,7 +143,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=20";
+} from "./docs.js?v=21";
 import {
   CATEGORIES,
   DIET_KEYS,
@@ -199,9 +199,9 @@ import {
   urlHost,
   weekDates,
   webSearchUrls,
-} from "./menu.js?v=20";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=20";
-import { initSwipe } from "./swipe-delete.js?v=20";
+} from "./menu.js?v=21";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=21";
+import { initSwipe } from "./swipe-delete.js?v=21";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -689,6 +689,7 @@ function viewDisplayPrefs() {
       <div class="title">${tr("prefs.title")}</div>
       <p class="tiny muted" style="margin:0.3rem 0 0.2rem">${tr("prefs.lede", { n: NAV_TAB_MAX })}</p>
       <h2 class="prefs-h">${tr("prefs.nav.selected")}</h2>
+      <p class="tiny muted prefs-count" style="margin:0.15rem 0 0">${tr("prefs.nav.count", { count: selected.length, n: NAV_TAB_MAX })}</p>
       <div class="nav-pick-list">
         ${
           selected.length
@@ -738,15 +739,17 @@ function tabbar() {
   const tabs = barNavItems();
   const count = role === "employer" ? badgeCount() : 0;
   const cur = navCurrentId(ui.tab);
+  const dense = tabs.length > 5;
+  const iconSize = dense ? 18 : 22;
   return `
-    <nav class="tabbar" aria-label="${tr("aria.mainTabs")}" style="--tab-cols:${Math.max(tabs.length, 2)}">
+    <nav class="tabbar${dense ? " is-dense" : ""}" aria-label="${tr("aria.mainTabs")}" style="--tab-cols:${Math.max(tabs.length, 2)}">
       ${tabs
         .map((t) => {
           const current = cur === t.id || ui.tab === t.id;
           const badge = (t.id === "more" || t.id === "h-more") && count ? `<span class="badge">${count > 9 ? "9+" : count}</span>` : "";
           return `<button class="tab-btn" type="button" data-go="${t.id}" aria-current="${current ? "page" : "false"}">
-            <span class="icon-wrap">${icon(t.icon, { size: 22 })}${badge}</span>
-            ${tr(t.labelKey)}
+            <span class="icon-wrap">${icon(t.icon, { size: iconSize })}${badge}</span>
+            <span class="tab-label">${tr(t.labelKey)}</span>
           </button>`;
         })
         .join("")}

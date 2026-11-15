@@ -3551,6 +3551,45 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
   hyphens: auto;
   padding: 0 0.12rem;
 }
+.tabbar {
+  container-type: inline-size;
+  container-name: tabbar;
+}
+.tab-label {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+  line-height: 1.15;
+}
+/* Home + up to five middle tabs + fixed More. Compact only the narrow bar. */
+.tabbar.is-dense {
+  padding-inline: max(0.12rem, var(--safe-l));
+}
+@container tabbar (max-width: 32rem) {
+  .tabbar.is-dense .tab-btn {
+    margin-inline: 0;
+    padding-inline: 0.02rem;
+    gap: 0.04rem;
+    font-size: 0.58rem;
+    letter-spacing: 0;
+    border-radius: 0.5rem;
+  }
+  .tabbar.is-dense .tab-label {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    font-size: 0.58rem;
+    line-height: 1.05;
+  }
+  .tabbar.is-dense .icon {
+    width: 18px;
+    height: 18px;
+  }
+}
 
 
 /* v15 swipe-to-delete */
