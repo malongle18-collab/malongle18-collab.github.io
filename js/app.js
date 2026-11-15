@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=21";
+} from "./data.js?v=22";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=21";
-import { escapeHtml, icon } from "./icons.js?v=21";
+} from "./dates.js?v=22";
+import { escapeHtml, icon } from "./icons.js?v=22";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=21";
+} from "./reminders.js?v=22";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=21";
+} from "./rules.js?v=22";
 import {
   arrangedRestList,
   currentHelper,
@@ -102,7 +102,7 @@ import {
   moveNavTab,
   isShopGroupCollapsed,
   setShopGroupCollapsed,
-} from "./storage.js?v=21";
+} from "./storage.js?v=22";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -128,7 +128,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=21";
+} from "./share.js?v=22";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -143,7 +143,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=21";
+} from "./docs.js?v=22";
 import {
   CATEGORIES,
   DIET_KEYS,
@@ -199,9 +199,9 @@ import {
   urlHost,
   weekDates,
   webSearchUrls,
-} from "./menu.js?v=21";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=21";
-import { initSwipe } from "./swipe-delete.js?v=21";
+} from "./menu.js?v=22";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=22";
+import { initSwipe } from "./swipe-delete.js?v=22";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -620,7 +620,7 @@ function header(titleSub) {
   `;
 }
 
-const NAV_HIDDEN = ["role", "onboard", "helper-new", "helper-edit", "h-enter"];
+const NAV_HIDDEN = ["role", "onboard", "helper-new", "h-enter"];
 
 function navCatalog() {
   return UI_NAV[role === "helper" ? "helper" : "employer"];
@@ -641,26 +641,29 @@ function barNavItems() {
   return [home, ...getNavTabs(uiPrefs, role), more].map(navMeta).filter(Boolean);
 }
 
+function navHighlightCandidates(tab) {
+  if (role === "helper") {
+    if (tab === "h-shop-detail") return ["h-shop"];
+    if (tab === "h-recipe" || tab === "h-cook" || tab === "h-recipes") return ["h-recipes", "h-menu"];
+    if (tab === "h-menu") return ["h-menu"];
+    if (tab === "h-remind") return ["h-remind"];
+    if (tab === "h-rights") return ["h-rights"];
+    return [tab];
+  }
+  if (tab === "shop-detail") return ["shop"];
+  if (tab === "recipe" || tab === "cook" || tab === "recipes") return ["recipes", "menu"];
+  if (tab === "menu") return ["menu"];
+  if (tab === "remind") return ["remind"];
+  if (tab === "guide") return ["guide"];
+  if (tab === "backup") return ["backup"];
+  if (tab === "helper-edit" || tab === "helper-new") return ["helper-edit"];
+  return [tab];
+}
+
 function navCurrentId(tab) {
-  const MORE_GROUP = ["more", "guide", "backup", "remind"];
-  const H_MORE_GROUP = ["h-more", "h-remind", "h-rights"];
-  let cur =
-    tab === "shop-detail"
-      ? "shop"
-      : tab === "h-shop-detail"
-        ? "h-shop"
-        : role !== "helper" && ["menu", "recipes", "recipe", "cook"].includes(tab)
-          ? "menu"
-          : role === "helper" && ["h-menu", "h-recipes", "h-recipe", "h-cook"].includes(tab)
-            ? "h-menu"
-            : role !== "helper" && MORE_GROUP.includes(tab)
-              ? "more"
-              : role === "helper" && H_MORE_GROUP.includes(tab)
-                ? "h-more"
-                : tab;
   const ids = new Set(barNavItems().map((item) => item.id));
-  if (!ids.has(cur)) cur = role === "helper" ? "h-more" : "more";
-  return cur;
+  const fallback = role === "helper" ? "h-more" : "more";
+  return navHighlightCandidates(tab).find((id) => ids.has(id)) || fallback;
 }
 
 function viewDisplayPrefs() {
@@ -734,7 +737,7 @@ function sidebar() {
 }
 
 function tabbar() {
-  const hidden = ["role", "onboard", "helper-new", "helper-edit", "h-enter"];
+  const hidden = ["role", "onboard", "helper-new", "h-enter"];
   if (hidden.includes(ui.tab)) return "";
   const tabs = barNavItems();
   const count = role === "employer" ? badgeCount() : 0;

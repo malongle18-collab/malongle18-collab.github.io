@@ -160,6 +160,47 @@ function layoutExpression() {
   })()`;
 }
 
+async function showMore(send, hash) {
+  await evalJson(send, `location.hash = ${JSON.stringify(hash)}`);
+  await waitFor(send, `document.querySelector(".prefs-card") ? true : null`);
+}
+
+async function pin(send, id) {
+  const result = await evalJson(send, `(() => {
+    const id = ${JSON.stringify(id)};
+    const selected = () => [...document.querySelectorAll("[data-action='nav-tab-remove']")].map((b) => b.getAttribute("data-id"));
+    if (selected().includes(id)) return "already";
+    if (selected().length >= 5) {
+      const remove = document.querySelector("[data-action='nav-tab-remove']");
+      if (!remove) return "cannot-remove";
+      remove.click();
+    }
+    const add = document.querySelector("[data-action='nav-tab-add'][data-id='" + id + "']");
+    if (!add) return "missing:" + selected().join(",");
+    add.disabled = false;
+    add.click();
+    return selected().includes(id) ? "pinned" : "not-pinned:" + selected().join(",");
+  })()`);
+  if (result !== "already" && result !== "pinned") throw new Error(`pin ${id}: ${result}`);
+}
+
+async function openPinned(send, id, readyExpr) {
+  const clicked = await evalJson(send, `(() => {
+    const btn = document.querySelector(".tabbar [data-go='${id}']");
+    if (!btn) return "no-tab";
+    btn.click();
+    return "ok";
+  })()`);
+  if (clicked !== "ok") throw new Error(`${id} tab: ${clicked}`);
+  await waitFor(send, readyExpr);
+  const current = await evalJson(send, `document.querySelector(".tabbar [aria-current='page']")?.getAttribute("data-go") || ""`);
+  if (current !== id) throw new Error(`${id} highlight is ${current}`);
+  const fit = await evalJson(send, layoutExpression());
+  if (!fit) throw new Error(`${id} has no tab bar`);
+  assertFit(fit, id);
+  return fit;
+}
+
 async function main() {
   const server = await startServer();
   const port = server.address().port;
@@ -202,6 +243,18 @@ async function main() {
     await send("Page.addScriptToEvaluateOnNewDocument", { source: SEED });
     await send("Page.navigate", { url: `${origin}#/more` });
     await waitFor(send, `document.querySelector(".prefs-card") ? true : null`);
+    const earlyAdds = await evalJson(send, `[...document.querySelectorAll("[data-action='nav-tab-add']")].map((b) => b.getAttribute("data-id"))`);
+    for (const id of ["remind", "recipes", "helper-edit", "guide", "backup"]) {
+      if (!earlyAdds.includes(id)) throw new Error("employer available list missing " + id + ": " + earlyAdds.join(","));
+    }
+    for (const id of ["h-remind", "h-recipes", "h-rights", "home", "more"]) {
+      if (earlyAdds.includes(id)) throw new Error("employer available list should not offer " + id);
+    }
+    mkdirSync(artifactDir, { recursive: true });
+    await evalJson(send, `document.querySelector("[data-action='nav-tab-add'][data-id='remind']")?.closest(".nav-pick-row")?.scrollIntoView({ block: "center" })`);
+    await new Promise((r) => setTimeout(r, 80));
+    const availableShot = await send("Page.captureScreenshot", { format: "png" });
+    writeFileSync(join(artifactDir, "nav-available-zh-390.png"), Buffer.from(availableShot.data, "base64"));
 
     const addTwo = await evalJson(send, `(() => {
       for (const id of ["shop", "menu"]) {
@@ -252,7 +305,6 @@ async function main() {
 
     await evalJson(send, `document.querySelector(".prefs-card").scrollIntoView({ block: "start" })`);
     await new Promise((r) => setTimeout(r, 120));
-    mkdirSync(artifactDir, { recursive: true });
     const zhShot = await send("Page.captureScreenshot", { format: "png" });
     writeFileSync(join(artifactDir, "nav-five-zh-390.png"), Buffer.from(zhShot.data, "base64"));
 
@@ -287,14 +339,106 @@ async function main() {
     const business = await evalJson(send, `localStorage.getItem("fdh-employer-v1")`);
     if (!business.includes("Maria Santos")) throw new Error("helper record was cleared");
     assertFit(state, "helper");
+    for (const id of ["h-remind", "h-recipes", "h-rights"]) {
+      if (!state.adds.some((a) => a.id === id)) throw new Error("helper available list missing " + id);
+    }
+
+    const helperVisits = [
+      ["h-remind", `document.querySelector("h1") && document.querySelector("h1").textContent.includes("Reminders") ? true : null`],
+      ["h-recipes", `document.querySelector("h1") && document.querySelector("h1").textContent.includes("Recipes") ? true : null`],
+      ["h-rights", `document.querySelector("h1") && document.querySelector("h1").textContent.includes("Your rights and key points") ? true : null`],
+    ];
+    for (const [id, ready] of helperVisits) {
+      await showMore(send, "#/h-more");
+      await pin(send, id);
+      await openPinned(send, id, ready);
+    }
+    await showMore(send, "#/h-more");
+    const helperSixth = await evalJson(send, `(() => {
+      const btn = document.querySelector("[data-action='nav-tab-add']:not([disabled])");
+      const blocked = document.querySelector("[data-action='nav-tab-add'][disabled]");
+      return { open: btn ? btn.getAttribute("data-id") : "", blocked: !!blocked, n: document.querySelectorAll("[data-action='nav-tab-remove']").length };
+    })()`);
+    if (helperSixth.n !== 5 || !helperSixth.blocked || helperSixth.open) {
+      throw new Error("helper sixth was not blocked: " + JSON.stringify(helperSixth));
+    }
+    await showMore(send, "#/h-more");
+    await evalJson(send, `document.querySelector(".tabbar [data-go='h-recipes']").click()`);
+    await waitFor(send, `document.querySelector(".recipe-card") ? true : null`);
+    await evalJson(send, `document.querySelector(".recipe-card").click()`);
+    await waitFor(send, `document.querySelector("[data-action='cook-open']") ? true : null`);
+    const helperRecipeTab = await evalJson(send, `document.querySelector(".tabbar [aria-current='page']")?.getAttribute("data-go") || ""`);
+    if (helperRecipeTab !== "h-recipes") throw new Error("helper recipe detail highlighted " + helperRecipeTab);
+    await evalJson(send, `document.querySelector("[data-action='cook-open']").click()`);
+    await waitFor(send, `document.querySelector(".cook") ? true : null`);
+    const helperCookTab = await evalJson(send, `document.querySelector(".tabbar [aria-current='page']")?.getAttribute("data-go") || ""`);
+    if (helperCookTab !== "h-recipes") throw new Error("helper cook mode highlighted " + helperCookTab);
+
+    await showMore(send, "#/h-more");
+    await evalJson(send, `document.querySelector("[data-action='choose-role'][data-role='employer']").click()`);
+    await waitFor(send, `location.hash === "#/home" ? true : null`);
+    const employerVisits = [
+      ["remind", `document.querySelector("h1") && document.querySelector("h1").textContent.includes("Reminders") ? true : null`],
+      ["recipes", `document.querySelector("h1") && document.querySelector("h1").textContent.includes("Recipes") ? true : null`],
+      ["helper-edit", `document.querySelector("h1") && document.querySelector("h1").textContent.includes("Edit helper details") ? true : null`],
+      ["guide", `document.querySelector("h1") && document.querySelector("h1").textContent.includes("Hiring a helper: key points") ? true : null`],
+      ["backup", `document.querySelector("h1") && document.querySelector("h1").textContent.includes("Backup and restore") ? true : null`],
+    ];
+    for (const [id, ready] of employerVisits) {
+      await showMore(send, "#/more");
+      await pin(send, id);
+      await openPinned(send, id, ready);
+    }
+    await showMore(send, "#/more");
+    await evalJson(send, `document.querySelector(".tabbar [data-go='helper-edit']").click()`);
+    await waitFor(send, `document.querySelector("input[name='name']") ? true : null`);
+    const editedName = await evalJson(send, `document.querySelector("input[name='name']").value`);
+    if (editedName !== "Maria Santos") throw new Error("helper form name changed: " + editedName);
+    await showMore(send, "#/more");
+    await evalJson(send, `document.querySelector(".tabbar [data-go='recipes']").click()`);
+    await waitFor(send, `document.querySelector(".recipe-card") ? true : null`);
+    await evalJson(send, `document.querySelector(".recipe-card").click()`);
+    await waitFor(send, `document.querySelector(".recipe-detail") ? true : null`);
+    const recipeTab = await evalJson(send, `document.querySelector(".tabbar [aria-current='page']")?.getAttribute("data-go") || ""`);
+    if (recipeTab !== "recipes") throw new Error("recipe detail highlighted " + recipeTab);
+    await evalJson(send, `document.querySelector("[data-action='cook-open']").click()`);
+    await waitFor(send, `document.querySelector(".cook") ? true : null`);
+    const cookTab = await evalJson(send, `document.querySelector(".tabbar [aria-current='page']")?.getAttribute("data-go") || ""`);
+    if (cookTab !== "recipes") throw new Error("cook mode highlighted " + cookTab);
+    await showMore(send, "#/more");
+    const employerSixth = await evalJson(send, `(() => {
+      const open = [...document.querySelectorAll("[data-action='nav-tab-add']:not([disabled])")].map((b) => b.getAttribute("data-id"));
+      const btn = document.querySelector("[data-action='nav-tab-add'][data-id='leave']");
+      if (btn) { btn.disabled = false; btn.click(); }
+      const selected = [...document.querySelectorAll("[data-action='nav-tab-remove']")].map((b) => b.getAttribute("data-id"));
+      return { open, selected };
+    })()`);
+    if (employerSixth.open.length) throw new Error("a sixth employer add stayed enabled: " + JSON.stringify(employerSixth.open));
+    if (employerSixth.selected.includes("leave") || employerSixth.selected.length !== 5) {
+      throw new Error("sixth employer add changed the bar: " + JSON.stringify(employerSixth.selected));
+    }
+    state = await evalJson(send, layoutExpression());
+    assertFit(state, "long labels");
+    const longShot = await send("Page.captureScreenshot", { format: "png" });
+    writeFileSync(join(artifactDir, "nav-long-labels-en-390.png"), Buffer.from(longShot.data, "base64"));
+    const beforeReload = state.selected.slice();
+    await send("Page.reload", { ignoreCache: true });
+    await waitFor(send, `document.querySelectorAll("[data-action='nav-tab-remove']").length === 5 ? true : null`);
+    state = await evalJson(send, layoutExpression());
+    if (JSON.stringify(state.selected) !== JSON.stringify(beforeReload)) {
+      throw new Error("reload lost restored tabs: " + JSON.stringify(state.selected));
+    }
+    const businessAfter = await evalJson(send, `localStorage.getItem("fdh-employer-v1")`);
+    if (!businessAfter.includes("Maria Santos")) throw new Error("reload cleared the helper record");
+    assertFit(state, "long labels reload");
 
     console.log(JSON.stringify({
       zhFit: "ok",
       enLabels,
       helperSelected,
       helperLabels: state.labels,
-      employerTabs: parsed.employer.tabs,
-      screenshots: ["nav-five-zh-390.png", "nav-five-en-390.png"],
+      restoredTabs: state.selected,
+      screenshots: ["nav-available-zh-390.png", "nav-five-zh-390.png", "nav-five-en-390.png", "nav-long-labels-en-390.png"],
     }, null, 2));
     ws.close();
   } finally {
