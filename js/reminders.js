@@ -1,6 +1,6 @@
-import { addDays, daysBetween, displayISO, toISO as formatISO } from "./dates.js?v=21";
-import { t as tr, tp } from "./i18n.js?v=21";
-import { annualLeaveVestDate, paidStatutoryStart, restDayGaps, isArrangedRestPolicy } from "./rules.js?v=21";
+import { addDays, daysBetween, displayISO, toISO as formatISO } from "./dates.js?v=22";
+import { t as tr, tp } from "./i18n.js?v=22";
+import { annualLeaveVestDate, paidStatutoryStart, restDayGaps, isArrangedRestPolicy } from "./rules.js?v=22";
 
 function item(partial) {
   return {

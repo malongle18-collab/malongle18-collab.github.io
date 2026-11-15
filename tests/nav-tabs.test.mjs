@@ -15,8 +15,8 @@ globalThis.localStorage = {
 };
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const storage = await import("../js/storage.js?v=21");
-const i18n = await import("../js/i18n.js?v=21");
+const storage = await import("../js/storage.js?v=22");
+const i18n = await import("../js/i18n.js?v=22");
 
 const {
   NAV_TAB_MAX,
@@ -49,6 +49,22 @@ assert(!UI_NAV.helper.some((item) => item.id === "h-more" || item.id === "h"), "
 
 const employerIds = UI_NAV.employer.map((item) => item.id);
 const helperIds = UI_NAV.helper.map((item) => item.id);
+assert(
+  JSON.stringify(employerIds) ===
+    JSON.stringify(["leave", "tasks", "rules", "shop", "menu", "pay", "share", "remind", "recipes", "helper-edit", "guide", "backup"]),
+  `employer catalog: ${employerIds.join(",")}`
+);
+assert(
+  JSON.stringify(helperIds) ===
+    JSON.stringify(["h-leave", "h-tasks", "h-rules", "h-shop", "h-menu", "h-pay", "h-remind", "h-recipes", "h-rights"]),
+  `helper catalog: ${helperIds.join(",")}`
+);
+for (const id of ["guide", "backup", "share", "helper-edit", "home", "more", "helper-new", "onboard"]) {
+  assert(!helperIds.includes(id), `helper catalog must not include ${id}`);
+}
+for (const id of ["h-rights", "h-recipes", "h-remind", "h", "h-more", "h-enter"]) {
+  assert(!employerIds.includes(id), `employer catalog must not include ${id}`);
+}
 assert(employerIds.length > NAV_TAB_MAX, "employer catalog must allow a blocked sixth add");
 assert(helperIds.length > NAV_TAB_MAX, "helper catalog must allow a blocked sixth add");
 
@@ -109,6 +125,8 @@ assert(
 );
 assert(JSON.stringify(normalizeNavTabs("employer", ["h-leave", "leave", "h-pay"])) === JSON.stringify(["leave"]), "other-role ids are dropped");
 assert(JSON.stringify(normalizeNavTabs("helper", undefined)) === JSON.stringify(DEFAULT_NAV_TABS.helper), "missing helper tabs use the default");
+assert(JSON.stringify(normalizeNavTabs("helper", ["recipes", "h-recipes", "guide"])) === JSON.stringify(["h-recipes"]), "helper keeps only its own new destination");
+assert(JSON.stringify(normalizeNavTabs("employer", ["h-rights", "remind", "backup", "share"])) === JSON.stringify(["remind", "backup", "share"]), "employer keeps its restored destinations");
 
 const business = JSON.stringify({ helpers: [{ id: "helper-1", name: "Maria" }], recipes: [{ id: "r1" }] });
 mem.set(STORAGE_KEY, business);
@@ -140,9 +158,9 @@ const index = readFileSync(join(root, "index.html"), "utf8");
 const sw = readFileSync(join(root, "sw.js"), "utf8");
 const app = readFileSync(join(root, "js/app.js"), "utf8");
 const menu = readFileSync(join(root, "js/menu.js"), "utf8");
-assert(index.includes("./css/app.css?v=21") && index.includes("./js/app.js?v=21"), "index.html assets are v21");
-assert(sw.includes('const CACHE = "fdh-household-pages-v21"'), "service worker cache is v21");
-assert(!index.includes("?v=20") && !sw.includes("pages-v20") && !app.includes("?v=20"), "v20 cache busters are gone");
+assert(index.includes("./css/app.css?v=22") && index.includes("./js/app.js?v=22"), "index.html assets are v22");
+assert(sw.includes('const CACHE = "fdh-household-pages-v22"'), "service worker cache is v22");
+assert(!index.includes("?v=21") && !sw.includes("pages-v21") && !app.includes("?v=21"), "v21 cache busters are gone");
 assert(menu.includes('const RECIPE_PHOTO_CACHE = "19"'), "recipe photo cache stays on 19");
 
 if (failed) {
