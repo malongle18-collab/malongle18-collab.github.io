@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=22";
+} from "./data.js?v=23";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=22";
-import { escapeHtml, icon } from "./icons.js?v=22";
+} from "./dates.js?v=23";
+import { escapeHtml, icon } from "./icons.js?v=23";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=22";
+} from "./reminders.js?v=23";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=22";
+} from "./rules.js?v=23";
 import {
   arrangedRestList,
   currentHelper,
@@ -102,7 +102,7 @@ import {
   moveNavTab,
   isShopGroupCollapsed,
   setShopGroupCollapsed,
-} from "./storage.js?v=22";
+} from "./storage.js?v=23";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -128,7 +128,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=22";
+} from "./share.js?v=23";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -143,7 +143,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=22";
+} from "./docs.js?v=23";
 import {
   CATEGORIES,
   DIET_KEYS,
@@ -199,9 +199,9 @@ import {
   urlHost,
   weekDates,
   webSearchUrls,
-} from "./menu.js?v=22";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=22";
-import { initSwipe } from "./swipe-delete.js?v=22";
+} from "./menu.js?v=23";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=23";
+import { initSwipe } from "./swipe-delete.js?v=23";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -2292,7 +2292,7 @@ function shopCard(list, items, detailTab, ctx) {
   const hiddenDone = shopLeaves(items).filter((i) => !renderedIds.has(i.id) && i.bought).length;
   const hiddenTotal = shopLeaves(items).filter((i) => !renderedIds.has(i.id)).length;
   const pct = total ? Math.round((bought / total) * 100) : 0;
-  return `<article class="card shop-card" data-shop-card data-total="${total}" data-hidden-done="${hiddenDone}">
+  const article = `<article class="card shop-card" data-shop-card data-total="${total}" data-hidden-done="${hiddenDone}">
     <button class="shop-card-head" type="button" data-go="${detailTab}" data-list="${list.id}">
       <span class="grow">${shopHeadLines(list)}</span>
       <span class="status-pill ${list.status === "done" ? "" : "watch"}">${list.status === "done" ? tr("shop.status.done") : tr("shop.status.open")}</span>
@@ -2306,6 +2306,9 @@ function shopCard(list, items, detailTab, ctx) {
         : `<p class="tiny muted" style="margin:0.5rem 0 0">${tr("shop.noItems")}</p>`
     }
   </article>`;
+  /* Items stay their own swipe rows. The list card itself is only deletable by the 僱主. */
+  if (role === "helper") return article;
+  return swipeRow(article, "shop-del", list.id, { className: "shop-card-swipe" });
 }
 
 function shopBrowser(lists, itemsOf, detailTab, emptyKey) {
@@ -5737,13 +5740,19 @@ async function onClick(ev) {
     return;
   }
   if (action === "shop-del") {
-    const listId = act.getAttribute("data-list");
+    if (role === "helper") return;
+    const listId = act.getAttribute("data-list") || id;
+    if (!listId) return;
     state.shopLists = state.shopLists.filter((l) => l.id !== listId);
     state.shopItems = state.shopItems.filter((i) => i.listId !== listId);
     save();
-    ui.shopListId = null;
+    if (ui.shopListId === listId) ui.shopListId = null;
+    ui.sheet = null;
+    if (ui.tab === "shop-detail") {
+      ui.tab = "shop";
+      history.replaceState(null, "", "#/shop");
+    }
     toast(tr("toast.listDeleted"));
-    setTab("shop");
     return;
   }
   if (action === "shop-complete") {
