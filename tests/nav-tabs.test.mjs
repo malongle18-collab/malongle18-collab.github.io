@@ -15,8 +15,8 @@ globalThis.localStorage = {
 };
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const storage = await import("../js/storage.js?v=23");
-const i18n = await import("../js/i18n.js?v=23");
+const storage = await import("../js/storage.js?v=24");
+const i18n = await import("../js/i18n.js?v=24");
 
 const {
   NAV_TAB_MAX,
@@ -51,12 +51,12 @@ const employerIds = UI_NAV.employer.map((item) => item.id);
 const helperIds = UI_NAV.helper.map((item) => item.id);
 assert(
   JSON.stringify(employerIds) ===
-    JSON.stringify(["leave", "tasks", "rules", "shop", "menu", "pay", "share", "remind", "recipes", "helper-edit", "guide", "backup"]),
+    JSON.stringify(["leave", "tasks", "rules", "shop", "menu", "pay", "share", "remind", "recipes", "helper-edit", "guide", "backup", "guide-help"]),
   `employer catalog: ${employerIds.join(",")}`
 );
 assert(
   JSON.stringify(helperIds) ===
-    JSON.stringify(["h-leave", "h-tasks", "h-rules", "h-shop", "h-menu", "h-pay", "h-remind", "h-recipes", "h-rights"]),
+    JSON.stringify(["h-leave", "h-tasks", "h-rules", "h-shop", "h-menu", "h-pay", "h-remind", "h-recipes", "h-rights", "h-guide-help"]),
   `helper catalog: ${helperIds.join(",")}`
 );
 for (const id of ["guide", "backup", "share", "helper-edit", "home", "more", "helper-new", "onboard"]) {
@@ -65,6 +65,10 @@ for (const id of ["guide", "backup", "share", "helper-edit", "home", "more", "he
 for (const id of ["h-rights", "h-recipes", "h-remind", "h", "h-more", "h-enter"]) {
   assert(!employerIds.includes(id), `employer catalog must not include ${id}`);
 }
+assert(employerIds.includes("guide-help"), "user guide is in the employer catalog");
+assert(helperIds.includes("h-guide-help"), "user guide is in the helper catalog");
+assert(!DEFAULT_NAV_TABS.employer.includes("guide-help"), "user guide is not a default employer tab");
+assert(!DEFAULT_NAV_TABS.helper.includes("h-guide-help"), "user guide is not a default helper tab");
 assert(employerIds.length > NAV_TAB_MAX, "employer catalog must allow a blocked sixth add");
 assert(helperIds.length > NAV_TAB_MAX, "helper catalog must allow a blocked sixth add");
 
@@ -125,7 +129,9 @@ assert(
 );
 assert(JSON.stringify(normalizeNavTabs("employer", ["h-leave", "leave", "h-pay"])) === JSON.stringify(["leave"]), "other-role ids are dropped");
 assert(JSON.stringify(normalizeNavTabs("helper", undefined)) === JSON.stringify(DEFAULT_NAV_TABS.helper), "missing helper tabs use the default");
-assert(JSON.stringify(normalizeNavTabs("helper", ["recipes", "h-recipes", "guide"])) === JSON.stringify(["h-recipes"]), "helper keeps only its own new destination");
+assert(JSON.stringify(normalizeNavTabs("helper", ["recipes", "h-recipes", "guide", "guide-help"])) === JSON.stringify(["h-recipes"]), "helper keeps only its own new destination");
+assert(JSON.stringify(normalizeNavTabs("helper", ["h-guide-help", "h-leave"])) === JSON.stringify(["h-guide-help", "h-leave"]), "helper can select the user guide");
+assert(!normalizeNavTabs("employer", undefined).includes("guide-help"), "default employer tabs omit the user guide");
 assert(JSON.stringify(normalizeNavTabs("employer", ["h-rights", "remind", "backup", "share"])) === JSON.stringify(["remind", "backup", "share"]), "employer keeps its restored destinations");
 
 const business = JSON.stringify({ helpers: [{ id: "helper-1", name: "Maria" }], recipes: [{ id: "r1" }] });
@@ -158,8 +164,10 @@ const index = readFileSync(join(root, "index.html"), "utf8");
 const sw = readFileSync(join(root, "sw.js"), "utf8");
 const app = readFileSync(join(root, "js/app.js"), "utf8");
 const menu = readFileSync(join(root, "js/menu.js"), "utf8");
-assert(index.includes("./css/app.css?v=23") && index.includes("./js/app.js?v=23"), "index.html assets are v23");
-assert(sw.includes('const CACHE = "fdh-household-pages-v23"'), "service worker cache is v23");
+assert(index.includes("./css/app.css?v=24") && index.includes("./js/app.js?v=24"), "index.html assets are v24");
+assert(sw.includes('const CACHE = "fdh-household-pages-v24"'), "service worker cache is v24");
+assert(sw.includes("./js/usage-guide.js?v=24"), "usage guide module is cached at v24");
+assert(!index.includes("?v=23") && !sw.includes("pages-v23") && !app.includes("?v=23"), "v23 cache busters are gone");
 assert(!index.includes("?v=22") && !sw.includes("pages-v22") && !app.includes("?v=22"), "v22 cache busters are gone");
 assert(menu.includes('const RECIPE_PHOTO_CACHE = "19"'), "recipe photo cache stays on 19");
 

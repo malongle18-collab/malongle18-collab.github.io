@@ -3864,3 +3864,101 @@ html, body, #app, .shell, .main, .sheet, .sheet-back, .payslip-layer {
 .cook .recipe-photo-credit {
   margin: 0.25rem 0 0.7rem;
 }
+
+/* ===== v24: illustrated usage guide ===== */
+.usage-tip {
+  background: var(--pine-soft);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.85rem;
+  margin: 0 0 0.85rem;
+  max-width: 100%;
+  min-width: 0;
+}
+.usage-tip p {
+  margin: 0 0 0.55rem;
+}
+.usage-guide {
+  max-width: 100%;
+  min-width: 0;
+}
+.usage-toc {
+  margin: 0 0 0.4rem;
+}
+.usage-toc .chip {
+  max-width: 100%;
+  white-space: normal;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+.usage-section {
+  margin: 1.35rem 0 0;
+  max-width: 100%;
+  min-width: 0;
+  scroll-margin-top: 0.4rem;
+}
+.usage-section h2 {
+  margin: 0 0 0.65rem;
+}
+/* Skip rendering for sections below the first. The first section stays eager so the opening screen is not delayed. */
+.usage-section + .usage-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 46rem;
+}
+.guide-figure {
+  margin: 0 0 0.75rem;
+  max-width: 100%;
+  min-width: 0;
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--pine-soft);
+  box-shadow: var(--shadow-sm);
+}
+.guide-figure img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 780 / 1400;
+  object-fit: cover;
+  object-position: top center;
+}
+.usage-steps {
+  list-style: none;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  counter-reset: usage-step;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-width: 100%;
+  min-width: 0;
+}
+.usage-steps li {
+  display: grid;
+  grid-template-columns: 1.55rem minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: start;
+  overflow-wrap: anywhere;
+}
+.usage-steps li::before {
+  counter-increment: usage-step;
+  content: counter(usage-step);
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  background: var(--pine);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+.usage-more {
+  margin: 0.75rem 0 0;
+}
+.usage-section .note-box {
+  margin-top: 0.75rem;
+}

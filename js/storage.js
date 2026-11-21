@@ -1,9 +1,9 @@
-import { getLang, t } from "./i18n.js?v=23";
-import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=23";
-import { cleanIdNumber, normalizeDocs } from "./docs.js?v=23";
-import { defaultContractEnd } from "./rules.js?v=23";
-import { todayISO } from "./dates.js?v=23";
-import { emptyMenu, normalizeDiet, normalizeMenu, normalizeRecipes } from "./menu.js?v=23";
+import { getLang, t } from "./i18n.js?v=24";
+import { DATA_VERSION, DEMO_HELPER } from "./data.js?v=24";
+import { cleanIdNumber, normalizeDocs } from "./docs.js?v=24";
+import { defaultContractEnd } from "./rules.js?v=24";
+import { todayISO } from "./dates.js?v=24";
+import { emptyMenu, normalizeDiet, normalizeMenu, normalizeRecipes } from "./menu.js?v=24";
 
 export const STORAGE_KEY = "fdh-employer-v1";
 
@@ -472,6 +472,7 @@ export const UI_NAV = {
     { id: "helper-edit", labelKey: "more.helperData", icon: "person" },
     { id: "guide", labelKey: "more.guide", icon: "info" },
     { id: "backup", labelKey: "backup.title", icon: "download" },
+    { id: "guide-help", labelKey: "usage.title", icon: "list" },
   ],
   helper: [
     { id: "h-leave", labelKey: "tab.leave", icon: "leaf" },
@@ -483,6 +484,7 @@ export const UI_NAV = {
     { id: "h-remind", labelKey: "home.reminders", icon: "bell" },
     { id: "h-recipes", labelKey: "recipe.title", icon: "book" },
     { id: "h-rights", labelKey: "hmore.rights", icon: "stamp" },
+    { id: "h-guide-help", labelKey: "usage.title", icon: "list" },
   ],
 };
 

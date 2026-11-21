@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=23";
+} from "./data.js?v=24";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=23";
-import { escapeHtml, icon } from "./icons.js?v=23";
+} from "./dates.js?v=24";
+import { escapeHtml, icon } from "./icons.js?v=24";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=23";
+} from "./reminders.js?v=24";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=23";
+} from "./rules.js?v=24";
 import {
   arrangedRestList,
   currentHelper,
@@ -102,7 +102,7 @@ import {
   moveNavTab,
   isShopGroupCollapsed,
   setShopGroupCollapsed,
-} from "./storage.js?v=23";
+} from "./storage.js?v=24";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -128,7 +128,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=23";
+} from "./share.js?v=24";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -143,7 +143,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=23";
+} from "./docs.js?v=24";
 import {
   CATEGORIES,
   DIET_KEYS,
@@ -199,9 +199,15 @@ import {
   urlHost,
   weekDates,
   webSearchUrls,
-} from "./menu.js?v=23";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=23";
-import { initSwipe } from "./swipe-delete.js?v=23";
+} from "./menu.js?v=24";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=24";
+import { initSwipe } from "./swipe-delete.js?v=24";
+import {
+  USAGE_IMG,
+  dismissUsageTip,
+  usageSectionsFor,
+  usageTipSeen,
+} from "./usage-guide.js?v=24";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -242,6 +248,7 @@ const ui = {
   reveal: {},
   shareDocs: false,
   payslipId: null,
+  usageAnchor: "",
   shopView: "list",
   shopCal: { year: new Date().getFullYear(), month: new Date().getMonth() },
   shopDay: "",
@@ -354,6 +361,7 @@ const EMPLOYER_ROUTES = new Set([
   "share",
   "more",
   "guide",
+  "guide-help",
   "backup",
   "onboard",
   "helper-new",
@@ -373,6 +381,7 @@ const HELPER_ROUTES = new Set([
   "h-pay",
   "h-remind",
   "h-rights",
+  "h-guide-help",
   "h-more",
   "h-enter",
 ]);
@@ -404,16 +413,19 @@ function parseHash() {
     ui.tab = "role";
     return;
   }
+  ui.usageAnchor = "";
   if (HELPER_ROUTES.has(tab)) {
     ui.tab = tab;
     if (tab === "h-shop-detail" && extra) ui.shopListId = extra;
     if ((tab === "h-recipe" || tab === "h-cook") && extra) ui.recipeId = extra;
+    if (tab === "h-guide-help") ui.usageAnchor = extra || "";
     return;
   }
   if (EMPLOYER_ROUTES.has(tab)) {
     ui.tab = tab;
     if (tab === "shop-detail" && extra) ui.shopListId = extra;
     if ((tab === "recipe" || tab === "cook") && extra) ui.recipeId = extra;
+    if (tab === "guide-help") ui.usageAnchor = extra || "";
     return;
   }
   ui.tab = role === "helper" ? "h" : "home";
@@ -578,11 +590,12 @@ function pageTitleKey() {
   const map = {
     home: "tab.home", leave: "tab.leave", tasks: "tab.tasks", rules: "tab.rules", more: "tab.more",
     pay: "pay.title", remind: "home.reminders", shop: "shop.title", "shop-detail": "shop.title",
-    share: "share.title", guide: "more.guide", backup: "backup.title", "helper-new": "helper.add", "helper-edit": "form.editTitle",
+    share: "share.title", guide: "more.guide", "guide-help": "usage.title", backup: "backup.title", "helper-new": "helper.add", "helper-edit": "form.editTitle",
     h: "tab.mine", "h-leave": "tab.leave", "h-tasks": "tab.tasks", "h-rules": "tab.rules", "h-more": "tab.more",
     menu: "menu.title", recipes: "recipe.title", recipe: "recipe.title", cook: "cook.title", "h-cook": "cook.title",
     "h-menu": "menu.title", "h-recipes": "recipe.title", "h-recipe": "recipe.title",
     "h-shop": "shop.title", "h-shop-detail": "shop.title", "h-pay": "pay.title", "h-remind": "home.reminders", "h-rights": "hmore.rights",
+    "h-guide-help": "usage.title",
   };
   return map[ui.tab] || "tab.home";
 }
@@ -648,6 +661,7 @@ function navHighlightCandidates(tab) {
     if (tab === "h-menu") return ["h-menu"];
     if (tab === "h-remind") return ["h-remind"];
     if (tab === "h-rights") return ["h-rights"];
+    if (tab === "h-guide-help") return ["h-guide-help"];
     return [tab];
   }
   if (tab === "shop-detail") return ["shop"];
@@ -655,6 +669,7 @@ function navHighlightCandidates(tab) {
   if (tab === "menu") return ["menu"];
   if (tab === "remind") return ["remind"];
   if (tab === "guide") return ["guide"];
+  if (tab === "guide-help") return ["guide-help"];
   if (tab === "backup") return ["backup"];
   if (tab === "helper-edit" || tab === "helper-new") return ["helper-edit"];
   return [tab];
@@ -2773,12 +2788,66 @@ function viewShare() {
   `;
 }
 
+function usageTipHtml(dest) {
+  if (usageTipSeen()) return "";
+  return `<div class="usage-tip" data-usage-tip>
+    <p>${tr("usage.tip")}</p>
+    <div class="btn-row">
+      <button class="btn small" type="button" data-go="${dest}">${tr("usage.open")}</button>
+      <button class="btn secondary small" type="button" data-action="usage-tip-dismiss">${tr("usage.tip.dismiss")}</button>
+    </div>
+  </div>`;
+}
+
+function usageLinkLabel(dest) {
+  return tr(dest === "h-rights" ? "hmore.rights" : "more.guide");
+}
+
+function viewUsageGuide() {
+  dismissUsageTip();
+  const bucket = role === "helper" ? "helper" : "employer";
+  const back = bucket === "helper" ? "h-more" : "more";
+  const sections = usageSectionsFor(bucket);
+  const toc = `<nav class="chip-row usage-toc" aria-label="${tr("usage.toc")}">${sections
+    .map((s) => `<button class="chip" type="button" data-action="usage-jump" data-id="${s.id}">${tr(s.titleKey)}</button>`)
+    .join("")}</nav>`;
+  const body = sections
+    .map((s, index) => {
+      const priority = index === 0 ? `fetchpriority="high"` : `loading="lazy" decoding="async"`;
+      const only = s.roles.length === 1 ? ` data-usage-only="${s.roles[0]}"` : "";
+      const link = s.link
+        ? `<p class="usage-more"><button class="linkish" type="button" data-go="${s.link}">${usageLinkLabel(s.link)}</button></p>`
+        : "";
+      return `<article class="usage-section" id="usage-${s.id}" data-usage-section="${s.id}"${only}>
+        <h2>${tr(s.titleKey)}</h2>
+        <figure class="guide-figure">
+          <img src="${s.image}" alt="${escapeHtml(tr(s.altKey))}" width="${USAGE_IMG.w}" height="${USAGE_IMG.h}" ${priority}>
+        </figure>
+        <ol class="usage-steps">${s.steps.map((key) => `<li>${escapeHtml(tr(key))}</li>`).join("")}</ol>
+        ${link}
+      </article>`;
+    })
+    .join("");
+  return `
+    <button class="linkish back-row" type="button" data-go="${back}">${tr("common.backMore")}</button>
+    <div class="usage-guide" data-usage-guide data-usage-role="${bucket}">
+      <h1 class="screen-title">${tr("usage.title")}</h1>
+      <p class="lede">${tr(bucket === "helper" ? "usage.lede.h" : "usage.lede.e")}</p>
+      ${toc}
+      ${body}
+    </div>
+    ${disclaimer()}
+  `;
+}
+
 function viewMore() {
   const h = helper();
   return `
     ${helperSwitcher()}
     <h1 class="screen-title">${tr("tab.more")}</h1>
+    ${usageTipHtml("guide-help")}
     <div class="card">
+      <button class="row" type="button" data-go="guide-help"><div class="grow"><div class="title">${tr("usage.title")}</div><div class="sub">${tr("usage.more.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="leave"><div class="grow"><div class="title">${tr("tab.leave")}</div><div class="sub">${tr("more.leave.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="pay"><div class="grow"><div class="title">${tr("more.pay")}</div><div class="sub">${tr("more.pay.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="remind"><div class="grow"><div class="title">${tr("home.reminders")}</div><div class="sub">${tr("more.remind.sub")}</div></div>${icon("chevron")}</button>
@@ -3423,7 +3492,9 @@ function viewHelperMore() {
   const h = sessionHelper();
   return `
     <h1 class="screen-title">${tr("tab.more")}</h1>
+    ${usageTipHtml("h-guide-help")}
     <div class="card">
+      <button class="row" type="button" data-go="h-guide-help"><div class="grow"><div class="title">${tr("usage.title")}</div><div class="sub">${tr("usage.more.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="h-leave"><div class="grow"><div class="title">${tr("tab.leave")}</div><div class="sub">${tr("more.leave.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="h-pay"><div class="grow"><div class="title">${tr("pay.title")}</div><div class="sub">${tr("hmore.pay.sub")}</div></div>${icon("chevron")}</button>
       <button class="row" type="button" data-go="h-remind"><div class="grow"><div class="title">${tr("home.reminders")}</div></div>${icon("chevron")}</button>
@@ -4603,6 +4674,8 @@ function mainContent() {
         return viewHelperRemind();
       case "h-rights":
         return viewHelperRights();
+      case "h-guide-help":
+        return viewUsageGuide();
       case "h-more":
         return viewHelperMore();
       default:
@@ -4642,6 +4715,8 @@ function mainContent() {
       return viewMore();
     case "guide":
       return viewGuide();
+    case "guide-help":
+      return viewUsageGuide();
     case "backup":
       return viewBackup();
     case "helper-new":
@@ -4725,6 +4800,19 @@ function captureScroll() {
 }
 
 let scrollRestoreToken = 0;
+function consumeUsageAnchor() {
+  const id = ui.usageAnchor;
+  if (!id) return;
+  ui.usageAnchor = "";
+  const apply = () => {
+    const el = document.getElementById(`usage-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ block: "start" });
+  };
+  apply();
+  requestAnimationFrame(apply);
+}
+
 function restoreScroll(pos) {
   if (!pos) return;
   const token = ++scrollRestoreToken;
@@ -4768,6 +4856,7 @@ function render() {
     `;
     restoreForms(keep);
     restoreScroll(scroll);
+    consumeUsageAnchor();
     bindAfterRender();
     setupSignaturePad();
   } catch (err) {
@@ -4998,9 +5087,11 @@ async function onClick(ev) {
   const go = ev.target.closest("[data-go]");
   if (go) {
     ev.preventDefault();
+    const dest = go.getAttribute("data-go");
+    if (dest === "guide-help" || dest === "h-guide-help") dismissUsageTip();
     if (go.dataset.list) ui.shopListId = go.dataset.list;
     if (go.dataset.recipe) ui.recipeId = go.dataset.recipe;
-    setTab(go.getAttribute("data-go"));
+    setTab(dest);
     return;
   }
   const sw = ev.target.closest("[data-switch]");
@@ -5061,6 +5152,19 @@ async function onClick(ev) {
   if (action === "set-lang") {
     setLang(act.getAttribute("data-lang"));
     render();
+    return;
+  }
+  if (action === "usage-tip-dismiss") {
+    dismissUsageTip();
+    render();
+    return;
+  }
+  if (action === "usage-jump") {
+    const id = act.getAttribute("data-id") || "";
+    const tab = role === "helper" ? "h-guide-help" : "guide-help";
+    const next = `#/${tab}/${id}`;
+    if (location.hash !== next) location.hash = next;
+    else document.getElementById(`usage-${id}`)?.scrollIntoView({ block: "start" });
     return;
   }
   if (action === "month-prev") {
