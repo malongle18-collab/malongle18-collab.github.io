@@ -15,8 +15,8 @@ globalThis.localStorage = {
 };
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const storage = await import("../js/storage.js?v=24");
-const i18n = await import("../js/i18n.js?v=24");
+const storage = await import("../js/storage.js?v=25");
+const i18n = await import("../js/i18n.js?v=25");
 
 const {
   NAV_TAB_MAX,
@@ -164,9 +164,10 @@ const index = readFileSync(join(root, "index.html"), "utf8");
 const sw = readFileSync(join(root, "sw.js"), "utf8");
 const app = readFileSync(join(root, "js/app.js"), "utf8");
 const menu = readFileSync(join(root, "js/menu.js"), "utf8");
-assert(index.includes("./css/app.css?v=24") && index.includes("./js/app.js?v=24"), "index.html assets are v24");
-assert(sw.includes('const CACHE = "fdh-household-pages-v24"'), "service worker cache is v24");
-assert(sw.includes("./js/usage-guide.js?v=24"), "usage guide module is cached at v24");
+assert(index.includes("./css/app.css?v=25") && index.includes("./js/app.js?v=25"), "index.html assets are v25");
+assert(sw.includes('const CACHE = "fdh-household-pages-v25"'), "service worker cache is v25");
+assert(sw.includes("./js/usage-guide.js?v=25"), "usage guide module is cached at v25");
+assert(!index.includes("?v=24") && !sw.includes("pages-v24") && !app.includes("?v=24"), "v24 cache busters are gone");
 assert(!index.includes("?v=23") && !sw.includes("pages-v23") && !app.includes("?v=23"), "v23 cache busters are gone");
 assert(!index.includes("?v=22") && !sw.includes("pages-v22") && !app.includes("?v=22"), "v22 cache busters are gone");
 assert(menu.includes('const RECIPE_PHOTO_CACHE = "19"'), "recipe photo cache stays on 19");

@@ -14,7 +14,7 @@ import {
   LEAVE_TYPES,
   SH_STATUSES,
   SHOP_PLACES,
-} from "./data.js?v=24";
+} from "./data.js?v=25";
 import {
   addDays,
   daysBetween,
@@ -29,8 +29,8 @@ import {
   toISO,
   todayISO,
   weekday,
-} from "./dates.js?v=24";
-import { escapeHtml, icon } from "./icons.js?v=24";
+} from "./dates.js?v=25";
+import { escapeHtml, icon } from "./icons.js?v=25";
 import {
   buildCustomReminders,
   buildReminders,
@@ -40,7 +40,7 @@ import {
   nextCustomDate,
   reminderBadgeCount,
   snoozeUntil,
-} from "./reminders.js?v=24";
+} from "./reminders.js?v=25";
 import {
   allObservedDatesForYear,
   annualLeaveDaysForYear,
@@ -63,7 +63,7 @@ import {
   upcomingRestDaysFor,
   vestedAnnualLeaveAsOf,
   taskAppliesOn,
-} from "./rules.js?v=24";
+} from "./rules.js?v=25";
 import {
   arrangedRestList,
   currentHelper,
@@ -102,7 +102,7 @@ import {
   moveNavTab,
   isShopGroupCollapsed,
   setShopGroupCollapsed,
-} from "./storage.js?v=24";
+} from "./storage.js?v=25";
 import {
   ACK_KEY,
   buildPayReturnCode,
@@ -128,7 +128,7 @@ import {
   setTaskDone,
   shareUrl,
   upsertInbox,
-} from "./share.js?v=24";
+} from "./share.js?v=25";
 import {
   DOC_TYPES,
   MAX_DOC_FILES,
@@ -143,7 +143,7 @@ import {
   maskPassport,
   normalizeDocs,
   readDocFile,
-} from "./docs.js?v=24";
+} from "./docs.js?v=25";
 import {
   CATEGORIES,
   DIET_KEYS,
@@ -199,15 +199,15 @@ import {
   urlHost,
   weekDates,
   webSearchUrls,
-} from "./menu.js?v=24";
-import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=24";
-import { initSwipe } from "./swipe-delete.js?v=24";
+} from "./menu.js?v=25";
+import { LANGS, applyDocumentLang, getLang, pick, setLang, t as tr, tIn, tp } from "./i18n.js?v=25";
+import { initSwipe } from "./swipe-delete.js?v=25";
 import {
   USAGE_IMG,
   dismissUsageTip,
   usageSectionsFor,
   usageTipSeen,
-} from "./usage-guide.js?v=24";
+} from "./usage-guide.js?v=25";
 
 const YEARS = officialYears();
 const EMPLOYER_TABS = [
@@ -609,18 +609,17 @@ function header(titleSub) {
   const h = role === "helper" ? helperSession?.payload?.helper : helper();
   const count = role === "employer" ? badgeCount() : helperReminderList().filter((r) => isReminderVisible(r, {}, today()) && (r.type !== "custom" || r.date <= today())).length;
   const sub = titleSub || (h ? escapeHtml(h.name || "") : role === "helper" ? tr("header.helperView") : tr("header.employerView"));
-  const home = role === "helper" ? "h" : "home";
   const remind = role === "helper" ? "h-remind" : "remind";
   const avatar = role === "helper" ? tr("brand.mark") : initialOf(h?.name);
   return `
     <header class="app-header">
-      <a class="brand" href="#/${home}">
+      <div class="brand">
         <div class="brand-mark" aria-hidden="true">${tr("brand.mark")}</div>
         <div class="brand-text">
           <strong>${tr("app.name")}</strong>
           <span>${sub}</span>
         </div>
-      </a>
+      </div>
       <div class="crumb" aria-hidden="true">${tr("nav.workspace")} <i>/</i> <strong>${tr(pageTitleKey())}</strong></div>
       <div class="header-actions">
         <span class="top-date">${formatDate(today(), { medium: true })}</span>
@@ -5083,11 +5082,72 @@ function confirmShopItemDelete(target) {
   return window.confirm(tr("shop.recipe.deleteConfirm", { name: target.name || "" }));
 }
 
+/** Content column scroller. The sidebar, window, and open sheets are separate. */
+function contentScroller() {
+  return document.querySelector(".content-col > .main");
+}
+
+let scrollTopToken = 0;
+
+function scrollContentToTop(el) {
+  const scroller = el || contentScroller();
+  if (!scroller) return;
+  const from = scroller.scrollTop;
+  if (from <= 0) return;
+  const token = ++scrollTopToken;
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  if (reduce) {
+    scroller.scrollTop = 0;
+    return;
+  }
+  const start = performance.now();
+  const dur = 240;
+  const cancel = () => {
+    if (token === scrollTopToken) scrollTopToken += 1;
+  };
+  scroller.addEventListener("wheel", cancel, { passive: true, once: true });
+  scroller.addEventListener("touchstart", cancel, { passive: true, once: true });
+  const step = (now) => {
+    if (token !== scrollTopToken || !scroller.isConnected) return;
+    const t = Math.min(1, (now - start) / dur);
+    const eased = 1 - (1 - t) ** 3;
+    scroller.scrollTop = t === 1 ? 0 : from * (1 - eased);
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/** Title, date, avatar, and the top safe-area padding. Buttons and fields keep their own taps. */
+function headerScrollTarget(target) {
+  if (!target?.closest) return null;
+  const header = target.closest(".app-header");
+  if (!header) return null;
+  const control = target.closest("button, input, textarea, select, label, summary, a, [data-go], [data-action]");
+  if (control && header.contains(control)) return null;
+  return contentScroller();
+}
+
+function sameTabScroll(go, dest) {
+  if (!go.closest(".tabbar") || dest !== ui.tab) return false;
+  if (ui.sheet || ui.docView || ui.payslipId) return false;
+  const main = contentScroller();
+  if (!main || main.scrollTop <= 0) return false;
+  scrollContentToTop(main);
+  return true;
+}
+
 async function onClick(ev) {
+  const scroller = headerScrollTarget(ev.target);
+  if (scroller) {
+    ev.preventDefault();
+    scrollContentToTop(scroller);
+    return;
+  }
   const go = ev.target.closest("[data-go]");
   if (go) {
     ev.preventDefault();
     const dest = go.getAttribute("data-go");
+    if (sameTabScroll(go, dest)) return;
     if (dest === "guide-help" || dest === "h-guide-help") dismissUsageTip();
     if (go.dataset.list) ui.shopListId = go.dataset.list;
     if (go.dataset.recipe) ui.recipeId = go.dataset.recipe;
