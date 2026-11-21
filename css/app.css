@@ -173,6 +173,7 @@ button {
     max(var(--pad-x), var(--safe-r));
   background: var(--shell);
   color: var(--shell-ink);
+  cursor: pointer;
 }
 
 .brand {

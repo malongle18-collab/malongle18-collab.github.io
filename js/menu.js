@@ -1,7 +1,7 @@
 /** Meal plan (今日餐單) and recipes (菜譜): pure data helpers, no DOM. */
-import { compressImageFile } from "./share.js?v=24";
-import { getLang } from "./i18n.js?v=24";
-import { LIB_RECIPES, RECIPE_PHOTO_CREDITS } from "./recipes-lib.js?v=24";
+import { compressImageFile } from "./share.js?v=25";
+import { getLang } from "./i18n.js?v=25";
+import { LIB_RECIPES, RECIPE_PHOTO_CREDITS } from "./recipes-lib.js?v=25";
 
 export const DEFAULT_SLOT_KEYS = ["breakfast", "lunch", "dinner", "snack"];
 export const MAX_SLOTS = 12;

@@ -15,9 +15,9 @@ globalThis.localStorage = {
 };
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const guide = await import("../js/usage-guide.js?v=24");
-const i18n = await import("../js/i18n.js?v=24");
-const storage = await import("../js/storage.js?v=24");
+const guide = await import("../js/usage-guide.js?v=25");
+const i18n = await import("../js/i18n.js?v=25");
+const storage = await import("../js/storage.js?v=25");
 
 const { usageSectionsFor, usageKeys, usageImageFiles, dismissUsageTip, usageTipSeen, USAGE_TIP_KEY } = guide;
 const { t, setLang } = i18n;
@@ -112,7 +112,7 @@ const sw = readFileSync(join(root, "sw.js"), "utf8");
 for (const file of usageImageFiles()) {
   assert(sw.includes(`./${file}`), `service worker missing ${file}`);
 }
-assert(sw.includes('const CACHE = "fdh-household-pages-v24"'), "cache version is v24");
+assert(sw.includes('const CACHE = "fdh-household-pages-v25"'), "cache version is v25");
 
 mem.clear();
 assert(!usageTipSeen(), "tip starts unseen");
