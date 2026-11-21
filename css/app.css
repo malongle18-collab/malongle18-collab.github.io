@@ -3310,6 +3310,9 @@ input:not([type]) {
 /* shop overview cards */
 .shop-cards { display: grid; gap: 0.7rem; }
 .shop-card { padding: 0.8rem 0.9rem; min-width: 0; }
+.shop-card-swipe { border-radius: var(--radius); }
+.shop-card-swipe > .swipe-front { background: transparent; align-items: stretch; }
+.shop-card-swipe > .swipe-front > .shop-card { width: 100%; }
 .shop-card-head { display: flex; align-items: center; gap: 0.6rem; width: 100%; text-align: left; padding: 0; }
 .shop-card-head .grow { display: flex; flex-direction: column; min-width: 0; gap: 0.1rem; }
 .shop-card-head .shop-line-date,
