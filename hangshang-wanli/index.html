@@ -272,7 +272,8 @@ h1, h2 { font-family: var(--serif); font-weight: 600; text-wrap: balance; margin
   min-block-size: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding-bottom: 0.85rem;
+  padding-bottom: 1.25rem;
+  scroll-padding-bottom: 1.25rem;
   scrollbar-width: thin;
   scrollbar-color: #2c4a55 transparent;
 }
@@ -335,7 +336,21 @@ h1, h2 { font-family: var(--serif); font-weight: 600; text-wrap: balance; margin
 
 .hold-row .good-name em { font-style: normal; color: var(--gold); }
 
-.hold-row .sell { min-block-size: 2.75rem; }
+.hold-row .sell { min-block-size: 2.75rem; padding-inline: 0.7rem; }
+
+.hold-actions { display: flex; gap: 0.35rem; }
+
+.trend { font-style: normal; color: var(--cyan); margin-inline-start: 0.2rem; }
+
+.ticker, .orders { padding: 0.7rem 0.85rem 0.2rem; }
+
+.ticker h2, .orders .section-head { margin: 0 0 0.35rem; }
+
+.ticker ul { list-style: none; margin: 0; padding: 0; }
+
+.ticker li { color: var(--gold); font-size: 0.92rem; line-height: 1.45; }
+
+.day-guide { color: var(--muted); font-size: 0.88rem; line-height: 1.5; }
 
 .stock .up { color: var(--ask); }
 .stock .down { color: var(--bid); }
@@ -348,6 +363,20 @@ h1, h2 { font-family: var(--serif); font-weight: 600; text-wrap: balance; margin
   overflow-x: auto;
   padding-bottom: 0.2rem;
   margin-top: 0.35rem;
+}
+
+.region-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.35rem 0.85rem 0.55rem;
+}
+
+.region-picks .chip {
+  flex: 1 1 calc(33.33% - 0.4rem);
+  min-width: max-content;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .chip { flex: 0 0 auto; }
@@ -416,6 +445,7 @@ h1, h2 { font-family: var(--serif); font-weight: 600; text-wrap: balance; margin
 
 .deal {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.45rem;
   padding: 0 0.85rem 0.7rem;
@@ -569,10 +599,12 @@ legend { color: var(--gold); padding: 0; }
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.4rem 0.7rem;
-  align-items: center;
+  align-items: start;
   padding: 0.75rem 0.9rem;
   border-bottom: 1px solid var(--line);
 }
+
+.city-row .fare, .order-row .fare { white-space: nowrap; }
 
 .city-row p, .craft-row p, .empty { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.88rem; }
 
@@ -1069,16 +1101,68 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
 
   // js/audio.js
   var AUDIO_KEY = "hangshang-wanli-audio";
-  var SCALE = [146.83, 164.81, 196, 220, 261.63, 293.66];
+  var NOTE = {
+    D3: 146.83,
+    E3: 164.81,
+    Fs3: 185,
+    A3: 220,
+    B3: 246.94,
+    D4: 293.66,
+    E4: 329.63,
+    Fs4: 369.99,
+    A4: 440,
+    B4: 493.88,
+    D5: 587.33,
+    E5: 659.26,
+    Fs5: 739.99,
+    A5: 880
+  };
+  var EIGHTH = 0.46;
+  var LOOP = 32;
+  var PLUCKS = [
+    [0, "D4"],
+    [1, "E4"],
+    [2, "Fs4"],
+    [3, "A4"],
+    [4, "B4"],
+    [5, "A4"],
+    [6, "Fs4"],
+    [7, "E4"],
+    [8, "D4"],
+    [10, "A4"],
+    [11, "B4"],
+    [14, "B4"],
+    [15, "A4"],
+    [16, "Fs4"],
+    [17, "E4"],
+    [18, "D4"],
+    [20, "E4"],
+    [22, "Fs4"],
+    [24, "A4"],
+    [26, "Fs4"],
+    [28, "E4"],
+    [30, "D4"]
+  ];
+  var BASS = [[0, "D3"], [8, "A3"], [16, "B3"], [24, "Fs3"]];
+  var FLUTE = [
+    [2, "Fs4", 3],
+    [8, "B4", 3],
+    [13, "A4", 3],
+    [18, "E5", 2],
+    [22, "D5", 3],
+    [28, "A4", 3]
+  ];
+  var GLISS = ["D4", "E4", "Fs4", "A4", "B4", "D5"];
   var ctx = null;
   var master = null;
   var musicGain = null;
   var sfxGain = null;
+  var echoIn = null;
   var unlocked = false;
   var scheduler = 0;
-  var step = 0;
-  var rain = null;
-  var drone = null;
+  var nextBeatTime = 0;
+  var beat = 0;
+  var noise = null;
   function AudioCtor() {
     if (typeof window === "undefined") return null;
     return window.AudioContext || window.webkitAudioContext || null;
@@ -1105,16 +1189,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       clearInterval(scheduler);
       scheduler = 0;
     }
-    try {
-      rain?.stop();
-    } catch {
-    }
-    try {
-      drone?.stop();
-    } catch {
-    }
-    rain = null;
-    drone = null;
+    beat = 0;
+    nextBeatTime = 0;
   }
   function noiseBuffer() {
     const length = Math.floor(ctx.sampleRate * 2);
@@ -1128,55 +1204,130 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     }
     return buffer;
   }
-  function startBgm() {
-    if (!ctx || !audioEnabled() || scheduler) return;
-    const now = ctx.currentTime;
-    const source = ctx.createBufferSource();
-    source.buffer = noiseBuffer();
-    source.loop = true;
-    const filter = ctx.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.value = 900;
-    const rainGain = ctx.createGain();
-    rainGain.gain.value = 0.045;
-    source.connect(filter);
-    filter.connect(rainGain);
-    rainGain.connect(musicGain);
-    source.start(now);
-    rain = source;
-    const root = ctx.createOscillator();
-    root.type = "sine";
-    root.frequency.value = 73.42;
-    const rootGain = ctx.createGain();
-    rootGain.gain.value = 0.03;
-    root.connect(rootGain);
-    rootGain.connect(musicGain);
-    root.start(now);
-    drone = root;
-    const pulse = () => {
-      if (!ctx || !audioEnabled()) return;
-      const t = ctx.currentTime;
-      const freq = SCALE[step % SCALE.length];
-      step += 1;
+  function buildEcho() {
+    const input = ctx.createGain();
+    const dry = ctx.createGain();
+    dry.gain.value = 0.82;
+    input.connect(dry);
+    dry.connect(musicGain);
+    const wet = ctx.createGain();
+    wet.gain.value = 0.28;
+    wet.connect(musicGain);
+    for (const time of [0.22, 0.37]) {
+      const delay = ctx.createDelay(1.2);
+      delay.delayTime.value = time;
+      const tone2 = ctx.createBiquadFilter();
+      tone2.type = "lowpass";
+      tone2.frequency.value = 2600;
+      const feedback = ctx.createGain();
+      feedback.gain.value = 0.28;
+      input.connect(delay);
+      delay.connect(tone2);
+      tone2.connect(feedback);
+      feedback.connect(delay);
+      tone2.connect(wet);
+    }
+    return input;
+  }
+  function pluck(freq, when, amp) {
+    if (!echoIn) return;
+    const partials = [1, 2, 3.01, 4.03];
+    const weights = [0.72, 0.26, 0.12, 0.05];
+    partials.forEach((mul, index) => {
+      const osc = ctx.createOscillator();
+      osc.type = index === 0 ? "triangle" : "sine";
+      osc.frequency.setValueAtTime(freq * mul, when);
       const gain = ctx.createGain();
-      gain.gain.setValueAtTime(1e-4, t);
-      gain.gain.exponentialRampToValueAtTime(0.045, t + 1.4);
-      gain.gain.exponentialRampToValueAtTime(1e-4, t + 5.2);
-      gain.connect(musicGain);
-      for (const detune of [1, 2.005]) {
-        const osc = ctx.createOscillator();
-        osc.type = detune === 1 ? "sine" : "triangle";
-        osc.frequency.value = freq * detune;
-        const voice = ctx.createGain();
-        voice.gain.value = detune === 1 ? 0.7 : 0.18;
-        osc.connect(voice);
-        voice.connect(gain);
-        osc.start(t);
-        osc.stop(t + 5.4);
+      const peak = Math.max(1e-4, amp * weights[index]);
+      const decay = 1.35 - index * 0.22;
+      gain.gain.setValueAtTime(1e-4, when);
+      gain.gain.exponentialRampToValueAtTime(peak, when + 6e-3);
+      gain.gain.exponentialRampToValueAtTime(1e-4, when + decay);
+      osc.connect(gain);
+      gain.connect(echoIn);
+      osc.start(when);
+      osc.stop(when + decay + 0.03);
+    });
+    if (!noise) noise = noiseBuffer();
+    const tick = ctx.createBufferSource();
+    tick.buffer = noise;
+    const band = ctx.createBiquadFilter();
+    band.type = "bandpass";
+    band.frequency.setValueAtTime(freq * 2, when);
+    band.Q.value = 3;
+    const tickGain = ctx.createGain();
+    tickGain.gain.setValueAtTime(amp * 0.35, when);
+    tickGain.gain.exponentialRampToValueAtTime(1e-4, when + 0.045);
+    tick.connect(band);
+    band.connect(tickGain);
+    tickGain.connect(echoIn);
+    tick.start(when);
+    tick.stop(when + 0.06);
+  }
+  function flute(freq, when, beats) {
+    if (!echoIn) return;
+    const dur = Math.max(0.4, beats * EIGHTH * 0.9);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(1e-4, when);
+    gain.gain.linearRampToValueAtTime(0.03, when + 0.22);
+    gain.gain.setValueAtTime(0.026, when + dur * 0.62);
+    gain.gain.exponentialRampToValueAtTime(1e-4, when + dur);
+    gain.connect(echoIn);
+    for (const [type, mul, mix] of [["sine", 1, 0.75], ["triangle", 1.003, 0.22]]) {
+      const osc = ctx.createOscillator();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq * mul, when);
+      const voice = ctx.createGain();
+      voice.gain.value = mix;
+      osc.connect(voice);
+      voice.connect(gain);
+      osc.start(when);
+      osc.stop(when + dur + 0.04);
+      if (type === "sine") {
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = 5.2;
+        const depth = ctx.createGain();
+        depth.gain.setValueAtTime(0, when);
+        depth.gain.linearRampToValueAtTime(freq * 7e-3, when + 0.38);
+        lfo.connect(depth);
+        depth.connect(osc.frequency);
+        lfo.start(when);
+        lfo.stop(when + dur + 0.04);
+      }
+    }
+  }
+  function playBeat(index, when) {
+    if (index === 12) {
+      GLISS.forEach((name, i) => pluck(NOTE[name], when + i * 0.042, 0.028));
+    }
+    for (const [at, name] of PLUCKS) {
+      if (at === index) pluck(NOTE[name], when, 0.05);
+    }
+    for (const [at, name] of BASS) {
+      if (at === index) pluck(NOTE[name], when, 0.04);
+    }
+    for (const [at, name, beats] of FLUTE) {
+      if (at === index) flute(NOTE[name], when, beats);
+    }
+  }
+  function startBgm() {
+    if (!ctx || !audioEnabled() || scheduler || !echoIn) return;
+    nextBeatTime = ctx.currentTime + 0.08;
+    beat = 0;
+    const ahead = () => {
+      if (!ctx || !audioEnabled()) return;
+      const horizon = ctx.currentTime + 0.28;
+      while (nextBeatTime < horizon) {
+        try {
+          playBeat(beat, nextBeatTime);
+        } catch {
+        }
+        beat = (beat + 1) % LOOP;
+        nextBeatTime += EIGHTH;
       }
     };
-    pulse();
-    scheduler = window.setInterval(pulse, 2400);
+    ahead();
+    scheduler = window.setInterval(ahead, 90);
   }
   function ensureGraph() {
     if (ctx || !canPlayAudio()) return;
@@ -1187,8 +1338,9 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       master.gain.value = audioEnabled() ? 1 : 0;
       master.connect(ctx.destination);
       musicGain = ctx.createGain();
-      musicGain.gain.value = 0.85;
+      musicGain.gain.value = 0.72;
       musicGain.connect(master);
+      echoIn = buildEcho();
       sfxGain = ctx.createGain();
       sfxGain.gain.value = 0.9;
       sfxGain.connect(master);
@@ -1447,6 +1599,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       worn: {},
       fine: {},
       display: [],
+      heat: 0,
+      orderFill: {},
       points: 0,
       deals: 0,
       seenRegions: {},
@@ -1547,14 +1701,14 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     if (state2.adopted?.[regionId]?.[goodId] && !regionById(regionId).cheap.includes(goodId)) {
       base = Math.max(4, Math.round(base * 0.78));
     }
-    const noise = (hash(state2.day, state2.cityId, goodId) % 5 - 2) * 0.015;
+    const noise2 = (hash(state2.day, state2.cityId, goodId) % 5 - 2) * 0.015;
     const qty = state2.stock?.[state2.cityId]?.[goodId] ?? 0;
     const sold = state2.sold?.[regionId]?.[goodId] || 0;
     const sense = climateMod(state2.day, regionId, goodId);
     const scarce = scarcity(qty);
     const supply = supplyMod(sold);
     const event = effectMod(state2, regionId, goodId);
-    const center = base * (1 + sense + noise + scarce + supply + event);
+    const center = base * (1 + sense + noise2 + scarce + supply + event);
     const eye = Math.max(0, (state2.attrs?.eye ?? 1) - 1) * 0.015;
     let ask = Math.max(2, Math.round(center * 1.14 * (1 - eye)));
     let bid = Math.max(1, Math.round(center * 0.8 * (1 + eye)));
@@ -1592,6 +1746,205 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
         cost: travelCost(state2, id)
       };
     });
+  }
+  function linkedIds(cityId) {
+    const ids = [];
+    for (const route of ROUTES) {
+      if (route.a === cityId) ids.push(route.b);
+      else if (route.b === cityId) ids.push(route.a);
+    }
+    return ids;
+  }
+  function confirmChoice(clicked, returnValue) {
+    const tap = String(clicked || "");
+    if (tap) return tap;
+    return String(returnValue || "");
+  }
+  function routePlan(state2, destId) {
+    if (!cityById(destId)) return null;
+    if (destId === state2.cityId) return { link: "here", hops: 0 };
+    const hereRegion = cityById(state2.cityId).regionId;
+    if (edge(state2.cityId, destId)) {
+      const cost = travelCost(state2, destId);
+      const gateway = cityById(destId).regionId !== hereRegion;
+      return {
+        link: gateway ? "gateway" : "direct",
+        nextId: destId,
+        hops: 1,
+        silver: cost.silver,
+        upkeep: cost.upkeep,
+        days: cost.days,
+        total: cost.total
+      };
+    }
+    const prev = /* @__PURE__ */ new Map();
+    const queue = [state2.cityId];
+    const seen = new Set(queue);
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const nextId of linkedIds(cur)) {
+        if (seen.has(nextId)) continue;
+        seen.add(nextId);
+        prev.set(nextId, cur);
+        if (nextId === destId) {
+          let step = destId;
+          let hops = 1;
+          while (prev.get(step) && prev.get(step) !== state2.cityId) {
+            step = prev.get(step);
+            hops += 1;
+          }
+          return { link: "beyond", nextId: step, nextName: cityById(step).name, hops };
+        }
+        queue.push(nextId);
+      }
+    }
+    return { link: "none" };
+  }
+  function worldAtlas(state2) {
+    return REGIONS.map((region) => ({
+      id: region.id,
+      name: region.name,
+      cheap: region.cheap.map((id) => goodById(id).name),
+      cities: CITIES.filter((city2) => city2.regionId === region.id).map((city2) => ({
+        id: city2.id,
+        name: city2.name,
+        line: city2.line,
+        plan: routePlan(state2, city2.id)
+      }))
+    }));
+  }
+  var DAY_GUIDE = "\u904E\u4E00\u65E5\uFF0C\u5929\u6C23\u540C\u5E02\u50F9\u6703\u8B8A\u3002\u6BCF\u5341\u4E8C\u65E5\u8F49\u5B63\u3002\u9022\u7B2C 3\u30016\u30019\u2026\u65E5\u5E02\u96C6\u88DC\u8CA8\uFF0C\u4F46\u4F60\u8CE3\u4F4E\u5497\u7684\u50F9\u5514\u6703\u56E0\u6B64\u6D88\u5931\u3002\u5E02\u6CC1\u5230\u671F\u6703\u6563\u3002\u8173\u592B\u6309\u4E0A\u8DEF\u65E5\u6578\u6536\u5DE5\u9322\u3002\u71D9\u624B\u8CA8\u71B1\u5EA6\u6BCF\u904E\u4E00\u65E5\u6E1B 1\uFF1B\u71B1\u5EA6\u672A\u6563\u3001\u81BD\u8272\u53C8\u672A\u5920\uFF0C\u95DC\u5361\u5C31\u6613\u67E5\u8CA8\u3002";
+  function passageNotes(before, after, extra = {}) {
+    const notes = [];
+    const days = Math.max(0, (after.day || 1) - (before.day || 1));
+    if (days > 0 && !extra.quietDay) notes.push(`\u904E\u5497 ${days} \u65E5\uFF0C\u800C\u5BB6\u7B2C ${after.day} \u65E5\u3002`);
+    if (seasonOf(before.day) !== seasonOf(after.day)) notes.push(`\u5B63\u7BC0\u8F49\u505A${seasonLabel(after.day)}\u3002`);
+    if (weatherLabel(before.day) !== weatherLabel(after.day)) notes.push(`\u5929\u6C23\u8B8A\u6210${weatherLabel(after.day)}\u3002`);
+    let restock = false;
+    for (let day = (before.day || 1) + 1; day <= after.day; day += 1) {
+      if (day % 3 === 0) restock = true;
+    }
+    if (restock) notes.push("\u5E02\u96C6\u88DC\u5497\u8CA8\uFF0C\u65E9\u524D\u8CE3\u591A\u7684\u4ECD\u7136\u58D3\u50F9\u3002");
+    const expired = (before.effects || []).filter((effect) => (effect.untilDay || 0) < after.day);
+    if (expired.length) notes.push("\u6709\u5E02\u6CC1\u5230\u671F\u3002");
+    if (extra.upkeep) notes.push(`\u8173\u592B\u5DE5\u9322 ${extra.upkeep} \u5169\u3002`);
+    const heatBefore = before.heat || 0;
+    const heatAfter = after.heat || 0;
+    if (heatBefore !== heatAfter) notes.push(`\u71D9\u624B\u8CA8\u71B1\u5EA6 ${heatBefore} \u2192 ${heatAfter}\u3002`);
+    if (days > 0) notes.push("\u5404\u57CE\u50F9\u9322\u6309\u65B0\u65E5\u5B50\u518D\u8A08\u3002");
+    return notes;
+  }
+  function coolHeat(state2, days) {
+    state2.heat = Math.max(0, (state2.heat || 0) - Math.max(0, days));
+  }
+  function daysUntilRestock(day) {
+    const mod = day % 3;
+    return mod === 0 ? 3 : 3 - mod;
+  }
+  function maxBuy(state2, goodId) {
+    const good = goodById(goodId);
+    if (!good) return 0;
+    const q = quote(state2, goodId);
+    if (q.ask < 1 || q.stock < 1) return 0;
+    const bySilver = Math.floor(state2.silver / q.ask);
+    const room = capacityOf(state2) - carryUsed(state2);
+    const byPack = Math.floor(room / good.weight);
+    return Math.max(0, Math.min(q.stock, bySilver, byPack));
+  }
+  function marketSignal(state2, goodId) {
+    const q = quote(state2, goodId);
+    const anchor = anchorPrice(state2.cityId, goodId);
+    const mid = (q.ask + q.bid) / 2;
+    let trend = "\u2192";
+    if (mid > anchor * 1.12) trend = "\u2191";
+    else if (mid < anchor * 0.9) trend = "\u2193";
+    let label = "\u5E73\u7A69";
+    if (q.stock <= 0) label = "\u7F3A\u8CA8\u30FB\u9AD8\u50F9";
+    else if (q.supply <= -0.15) label = "\u8CA8\u591A\u30FB\u58D3\u50F9";
+    else if (q.stock < 8) label = "\u504F\u7DCA\u30FB\u504F\u8CB4";
+    else if (q.stock > 36) label = "\u8C50\u7522\u30FB\u62B5\u8CB7";
+    else if (q.sense >= 0.2 || q.event >= 0.12) label = "\u6436\u8CFC";
+    return { label, trend, stock: q.stock, ask: q.ask, bid: q.bid, restockIn: daysUntilRestock(state2.day) };
+  }
+  function tradeHints(state2, limit = 3) {
+    const here = cityById(state2.cityId).regionId;
+    const held = Object.keys(state2.inventory || {}).filter((id) => (state2.inventory[id] || 0) > 0);
+    const watch = [.../* @__PURE__ */ new Set([...held, ...regionById(here).cheap])].slice(0, 8);
+    const hints = [];
+    for (const goodId of watch) {
+      const ask = quote(state2, goodId).ask;
+      let best = null;
+      for (const region of REGIONS) {
+        if (region.id === here) continue;
+        const city2 = CITIES.find((item) => item.regionId === region.id);
+        const bid = quote({ ...state2, cityId: city2.id }, goodId).bid;
+        if (!best || bid > best.bid) best = { region, bid };
+      }
+      if (!best) continue;
+      const spread = best.bid - ask;
+      if (spread < 2) continue;
+      hints.push({
+        goodId,
+        name: goodById(goodId).name,
+        place: best.region.name,
+        bid: best.bid,
+        ask,
+        spread
+      });
+    }
+    hints.sort((a, b) => b.spread - a.spread);
+    return hints.slice(0, limit);
+  }
+  function cityOrders(state2) {
+    const city2 = cityById(state2.cityId);
+    const region = regionById(city2.regionId);
+    const span = Math.floor((Math.max(1, state2.day) - 1) / 4);
+    const untilDay = span * 4 + 4;
+    if (state2.day > untilDay) return [];
+    const foreignPool = GOODS.filter((good) => !good.crafted && good.id !== "hot" && !region.cheap.includes(good.id));
+    const picks = [region.cheap[hash(city2.id, span, "oa") % region.cheap.length]];
+    if (hash(city2.id, span, "on") % 2 === 0) {
+      picks.push(foreignPool[hash(city2.id, span, "ob") % foreignPool.length].id);
+    }
+    return picks.map((goodId) => {
+      const qty = 4 + hash(city2.id, span, goodId, "oq") % 4;
+      const per = 2 + hash(city2.id, span, goodId, "op") % 4;
+      const id = `${city2.id}-${span}-${goodId}`;
+      const filled = Math.min(qty, state2.orderFill?.[id] || 0);
+      return {
+        id,
+        goodId,
+        name: goodById(goodId).name,
+        qty,
+        per,
+        untilDay,
+        filled,
+        left: qty - filled,
+        daysLeft: untilDay - state2.day + 1,
+        house: `${city2.name}\u5546\u884C`
+      };
+    }).filter((order) => order.left > 0);
+  }
+  function fillOrder(state2, orderId) {
+    const order = cityOrders(state2).find((item) => item.id === orderId);
+    if (!order) return { ok: false, reason: "\u5462\u5F35\u6025\u55AE\u904E\u5497\u671F", state: state2 };
+    if ((state2.inventory?.[order.goodId] || 0) < 1) return { ok: false, reason: "\u884C\u56CA\u5187\u5462\u6A23", state: state2 };
+    const qty = Math.min(state2.inventory[order.goodId], order.left);
+    const result = sell(state2, order.goodId, qty);
+    if (!result.ok) return result;
+    const bonus = order.per * qty;
+    const next = result.state;
+    next.silver += bonus;
+    next.orderFill = { ...next.orderFill || {}, [order.id]: (next.orderFill?.[order.id] || 0) + qty };
+    next.lastMessage = `\u4EA4\u5497${order.house}\u6025\u55AE ${order.name} ${qty}\uFF0C\u8CA8\u6B3E\u4E4B\u5916\u53E6\u8CDE ${bonus} \u5169\u3002`;
+    return { ok: true, state: next, bonus, qty, event: result.event };
+  }
+  function offerMargin(state2, goodId, offer) {
+    const qty = state2.inventory?.[goodId] || 0;
+    const knownQty = Math.min(qty, state2.basisQty?.[goodId] || 0);
+    if (knownQty < 1) return { known: false, avg: null, profit: null, knownQty: 0, qty };
+    const avg = Math.round((state2.basis[goodId] || 0) / knownQty);
+    return { known: true, avg, profit: offer - avg, knownQty, qty, partial: knownQty < qty };
   }
   function have(state2, id) {
     return state2.inventory[id] || 0;
@@ -1807,6 +2160,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     next.stock[next.cityId][goodId] -= qty;
     addItem(next, goodId, qty);
     rememberCost(next, goodId, qty, bill);
+    if (goodId === "hot") next.heat = (next.heat || 0) + qty * 2;
     next.lastMessage = `\u8CB7\u5165${goodById(goodId).name} ${qty}\uFF0C\u4ED8 ${bill} \u5169\u3002`;
     return { ok: true, state: next, bill };
   }
@@ -1839,7 +2193,9 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
         no: "\u6416\u982D"
       };
     }
-    if (n === 2 && have(state2, "hot") > 0 && (state2.attrs?.nerve ?? 1) < 4) {
+    const nerve = state2.attrs?.nerve ?? 1;
+    const hotWatch = have(state2, "hot") > 0 && (nerve < 4 || (state2.heat || 0) > 0 && nerve < 6);
+    if (n === 2 && hotWatch) {
       return {
         id: "checkpoint",
         auto: true,
@@ -1893,24 +2249,31 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     const fromId = state2.cityId;
     let next = clone(state2);
     next.silver -= cost.silver;
+    let paidUpkeep = 0;
+    let porterScatter = "";
     if (cost.upkeep) {
-      if (next.silver >= cost.upkeep) next.silver -= cost.upkeep;
-      else {
+      if (next.silver >= cost.upkeep) {
+        next.silver -= cost.upkeep;
+        paidUpkeep = cost.upkeep;
+      } else {
         next.porters = 0;
-        next.lastMessage = "\u8173\u592B\u5DE5\u9322\u5514\u5920\uFF0C\u6563\u5497\u3002";
+        porterScatter = "\u8173\u592B\u5DE5\u9322\u5514\u5920\uFF0C\u6563\u5497\u3002";
       }
     }
     next.cityId = destId;
     grantRegionPoint(next);
     next.day += cost.days;
+    coolHeat(next, cost.days);
     next.nightIndex = 0;
     next.nightNote = {};
     next.effects = liveEffects(next);
     next = applyRestock(next);
     const event = makeEvent(next, fromId, destId);
     if (event?.auto) next = applyAuto(next, event);
-    if (!event && !next.lastMessage?.includes("\u8173\u592B")) next.lastMessage = `\u5230\u5497${cityById(destId).name}\u3002`;
-    else if (event && !event.auto) next.lastMessage = event.body;
+    const arrived = `\u5230\u5497${cityById(destId).name}\u3002`;
+    const notes = passageNotes(state2, next, { upkeep: paidUpkeep });
+    const pieces = [porterScatter, event ? event.body : "", arrived, ...notes].filter(Boolean);
+    next.lastMessage = pieces.join("");
     return { ok: true, state: next, event, cost };
   }
   function resolveEvent(state2, event, choice) {
@@ -1962,11 +2325,9 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     const next = clone(state2);
     ensureMaps(next);
     let paid = 0;
-    let known = true;
     for (const [id, qty] of Object.entries(recipe.need)) {
       const tracked = next.basisQty[id] || 0;
-      if (tracked < qty) known = false;
-      else if (known) paid += Math.round((next.basis[id] || 0) * qty / tracked);
+      if (tracked > 0) paid += Math.round((next.basis[id] || 0) * Math.min(qty, tracked) / tracked);
     }
     for (const [id, qty] of Object.entries(recipe.need)) {
       let left = qty;
@@ -1975,10 +2336,15 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
         left -= 1;
       }
     }
-    for (const [id, qty] of Object.entries(recipe.out)) {
+    const outs = Object.entries(recipe.out);
+    const totalOut = outs.reduce((sum, [, qty]) => sum + qty, 0) || 1;
+    let leftPaid = paid;
+    outs.forEach(([id, qty], index) => {
+      const share = index === outs.length - 1 ? leftPaid : Math.round(paid * qty / totalOut);
+      leftPaid -= share;
       addItem(next, id, qty);
-      if (known) rememberCost(next, id, qty, paid);
-    }
+      rememberCost(next, id, qty, share);
+    });
     next.lastMessage = `\u505A\u6210${recipe.name}\u3002\u672A\u8CE3\u51FA\u4E4B\u524D\uFF0C\u5514\u6703\u5165\u672C\u5730\u5E02\u3002`;
     return { ok: true, state: next };
   }
@@ -2331,6 +2697,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     const next = clone(state2);
     ensureMaps(next);
     next.silver -= cust.ask;
+    if ((next.basisQty[cust.goodId] || 0) > 0) next.basis[cust.goodId] = (next.basis[cust.goodId] || 0) + cust.ask;
+    else rememberCost(next, cust.goodId, next.inventory[cust.goodId] || 1, cust.ask);
     if (cust.worn && (next.worn[cust.goodId] || 0) > 0) {
       next.worn[cust.goodId] -= 1;
       if (next.worn[cust.goodId] <= 0) delete next.worn[cust.goodId];
@@ -2376,11 +2744,13 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
   function closeNight(state2) {
     let next = clone(state2);
     next.day += 1;
+    coolHeat(next, 1);
     next.nightIndex = 0;
     next.nightNote = {};
     next.effects = liveEffects(next);
     next = applyRestock(next);
-    next.lastMessage = `\u65B0\u7684\u4E00\u65E5\uFF0C${weatherLabel(next.day)}\u3002`;
+    const notes = passageNotes(state2, next, { quietDay: true });
+    next.lastMessage = [`\u65B0\u7684\u4E00\u65E5\uFF0C\u7B2C ${next.day} \u65E5\uFF0C${weatherLabel(next.day)}\u3002`, ...notes].join("");
     return { ok: true, state: next };
   }
   function taughtAttr(cityId) {
@@ -2405,11 +2775,13 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     let next = clone(state2);
     next.silver -= offer.fee;
     next.day += offer.days;
+    coolHeat(next, offer.days);
     next.nightIndex = 0;
     next.attrs[offer.attr] += 1;
     next.effects = liveEffects(next);
     next = applyRestock(next);
-    next.lastMessage = `\u5B78\u5497${offer.days}\u65E5${offer.name}\uFF0C\u800C\u5BB6 ${next.attrs[offer.attr]}\u3002\u82B1\u8CBB ${offer.fee} \u5169\u3002`;
+    const notes = passageNotes(state2, next, { quietDay: true });
+    next.lastMessage = [`\u5B78\u5497${offer.days}\u65E5${offer.name}\uFF0C\u800C\u5BB6 ${next.attrs[offer.attr]}\u3002\u82B1\u8CBB ${offer.fee} \u5169\u3002`, ...notes].join("");
     return { ok: true, state: next, gain: 1 };
   }
   function spendPoint(state2, attrId) {
@@ -2447,6 +2819,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       worn: state2.worn || {},
       fine: state2.fine || {},
       display: state2.display || [],
+      heat: state2.heat || 0,
+      orderFill: state2.orderFill || {},
       points: state2.points || 0,
       deals: state2.deals || 0,
       seenRegions: state2.seenRegions || {},
@@ -2476,6 +2850,16 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       seen.add(id);
       out.push(id);
       if (out.length >= DISPLAY_MAX) break;
+    }
+    return out;
+  }
+  function cleanOrderFill(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object") return out;
+    for (const [id, value] of Object.entries(raw)) {
+      const n = Number(value);
+      if (typeof id !== "string" || id.length > 80 || !Number.isFinite(n) || n < 0) continue;
+      out[id] = Math.round(n);
     }
     return out;
   }
@@ -2526,6 +2910,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       worn: cleanMap(raw.worn, raw.inventory, true),
       fine: cleanMap(raw.fine, raw.inventory, true),
       display: cleanDisplay(raw.display, raw.inventory),
+      heat: Number.isFinite(Number(raw.heat)) ? Math.max(0, Math.round(Number(raw.heat))) : (raw.inventory.hot || 0) * 2,
+      orderFill: cleanOrderFill(raw.orderFill),
       points: Math.max(0, raw.points || 0),
       deals: Math.max(0, raw.deals || 0),
       seenRegions: { ...raw.seenRegions || {} },
@@ -2537,7 +2923,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
   function hud(state2) {
     const c = carry(state2);
     const city2 = cityById(state2.cityId);
-    return `${city2.name} \xB7 ${weatherLabel(state2.day)} \xB7 \u9280\u5169 ${state2.silver} \xB7 ${c.used}/${c.max}`;
+    const heat = state2.heat ? ` \xB7 \u71B1\u5EA6 ${state2.heat}` : "";
+    return `${city2.name} \xB7 \u7B2C ${state2.day} \u65E5 \xB7 ${weatherLabel(state2.day)} \xB7 \u9280\u5169 ${state2.silver} \xB7 ${c.used}/${c.max}${heat}`;
   }
 
   // js/game.js
@@ -2570,7 +2957,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     certBack: false,
     pending: null,
     scroll: 0,
-    marketView: "all"
+    marketView: "all",
+    mapRegion: ""
   };
   var state = null;
   var lastScreen = "";
@@ -2748,32 +3136,72 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     return `<ul class="hold-list">${held.map((lot) => `<li class="hold-row">
       <img src="${esc(goodArt(lot.id))}" alt="" width="321" height="236">
       <span><span class="good-name">${esc(lot.name)} <em>\xD7${lot.qty}</em></span><span class="stock">${lotMeta(lot)}</span></span>
-      <button type="button" class="sell" data-act="sell" data-id="${lot.id}">\u8CE3\u51FA</button>
+      <span class="hold-actions">
+        <button type="button" class="sell" data-act="sell" data-id="${lot.id}" data-qty="1">\u8CE31</button>
+        <button type="button" class="sell" data-act="sell" data-id="${lot.id}" data-qty="max">\u5168\u8CE3</button>
+      </span>
     </li>`).join("")}</ul>`;
+  }
+  function tradeButton(kind, id, qty, label, disabled, reason) {
+    const block = disabled ? `aria-disabled="true" data-reason="${esc(reason)}"` : "";
+    return `<button type="button" class="${kind === "buy" ? "buy" : "sell"}" data-act="${kind}" data-id="${id}" data-qty="${qty}" ${block}>${label}</button>`;
+  }
+  function renderTicker() {
+    const hints = tradeHints(state);
+    const restock = daysUntilRestock(state.day);
+    const effects = (state.effects || []).filter((effect) => effect.untilDay >= state.day && effect.title);
+    const lines = hints.length ? hints.map((hint) => `<li>${esc(hint.name)}\uFF1A\u5462\u5EA6\u8CB7 ${hint.ask}\uFF0C${esc(hint.place)}\u51FA\u5230 ${hint.bid}</li>`).join("") : "<li>\u9644\u8FD1\u672A\u898B\u660E\u986F\u5DEE\u50F9\u3002\u5165\u8CA8\u4E4B\u5F8C\u518D\u7747\u884C\u60C5\u3002</li>";
+    const effectLine = effects.length ? `<p class="hold-summary">\u5E02\u6CC1\uFF1A${esc(effects.map((effect) => effect.title).join("\u3001"))}</p>` : "";
+    return `<section class="ticker" aria-label="\u884C\u60C5">
+    <h2>\u884C\u60C5</h2>
+    <ul>${lines}</ul>
+    ${effectLine}
+    <p class="hold-summary">\u518D\u904E ${restock} \u65E5\u88DC\u8CA8\u3002\u88DC\u8CA8\u5514\u6703\u62B9\u8D70\u4F60\u8CE3\u4F4E\u7684\u50F9\u3002\u7BAD\u5634\u5C0D\u4F4F\u5E73\u6642\u50F9\u3002</p>
+  </section>`;
+  }
+  function renderOrders() {
+    const orders = cityOrders(state);
+    if (!orders.length) return "";
+    const rows = orders.map((order) => {
+      const have2 = state.inventory[order.goodId] || 0;
+      return `<li class="order-row">
+      <div><span class="city-name">${esc(order.house)}\u6025\u6536${esc(order.name)} ${order.qty}</span>
+      <p>\u5DF2\u4EA4 ${order.filled}/${order.qty} \xB7 \u6BCF\u4EF6\u53E6\u8CDE ${order.per} \u5169 \xB7 \u5269 ${order.daysLeft} \u65E5</p></div>
+      <button type="button" class="city-go" data-act="fill-order" data-id="${esc(order.id)}" ${have2 ? "" : 'aria-disabled="true" data-reason="\u884C\u56CA\u5187\u5462\u6A23"'}>\u4EA4\u8CA8</button>
+    </li>`;
+    }).join("");
+    return `<section class="orders" aria-label="\u5546\u884C\u6025\u55AE"><h2 class="section-head">\u5546\u884C\u6025\u55AE</h2><ul class="city-list">${rows}</ul></section>`;
   }
   function renderMarket() {
     const held = holdingReport(state);
     const view = ui.marketView === "held" ? "held" : "all";
     const rows = visibleGoods().map((g) => {
       const q = quote(state, g.id);
+      const sig = marketSignal(state, g.id);
       const on = ui.goodId === g.id;
       const buyWhy = blockReason(g, q);
       const owned = state.inventory[g.id] || 0;
       const lot = held.find((item) => item.id === g.id);
+      const room = maxBuy(state, g.id);
       return `<li class="good-row${on ? " is-on" : ""}">
       <button type="button" class="good" data-act="select" data-id="${g.id}" aria-pressed="${on}">
         <img src="${esc(goodArt(g.id))}" alt="" width="321" height="236">
-        <span><span class="good-name">${esc(g.name)}</span><span class="stock">${owned ? `\u6301\u6709 ${owned}` : ""}${owned ? " \xB7 " : ""}${q.stock > 0 ? `\u5E02\u5B58 ${q.stock}` : "\u7F3A\u8CA8"}${lot && !lot.local ? " \xB7 \u5916\u5730" : ""}</span></span>
+        <span><span class="good-name">${esc(g.name)} <em class="trend">${sig.trend}</em></span><span class="stock">${owned ? `\u6301\u6709 ${owned} \xB7 ` : ""}\u5EAB\u5B58 ${sig.stock} \xB7 ${esc(sig.label)}${lot && !lot.local ? " \xB7 \u5916\u5730" : ""}</span></span>
         <span class="prices"><span class="ask"><span class="k">\u8CB7</span><b>${q.ask}</b></span><span class="bid"><span class="k">\u8CE3</span><b>${lot ? lot.bid : q.bid}</b></span></span>
       </button>
       ${on ? `<div class="deal">
-        <button type="button" class="buy" data-act="buy" data-id="${g.id}" ${buyWhy ? `aria-disabled="true" data-reason="${esc(buyWhy)}"` : ""} aria-describedby="trade-hint">\u8CB7\u5165</button>
-        <button type="button" class="sell" data-act="sell" data-id="${g.id}" ${owned ? "" : 'aria-disabled="true" data-reason="\u884C\u56CA\u5187\u5462\u6A23"'}>\u8CE3\u51FA</button>
+        ${tradeButton("buy", g.id, 1, "\u8CB71", Boolean(buyWhy) || room < 1, buyWhy || "\u8CB7\u5514\u5230")}
+        ${tradeButton("buy", g.id, 5, "\u8CB75", room < 5, room < 1 ? buyWhy || "\u8CB7\u5514\u5230" : "\u8CB7\u5514\u5230\u5481\u591A")}
+        ${tradeButton("buy", g.id, "max", "\u8CB7\u6EFF", room < 1, buyWhy || "\u8CB7\u5514\u5230")}
+        ${tradeButton("sell", g.id, 1, "\u8CE31", owned < 1, "\u884C\u56CA\u5187\u5462\u6A23")}
+        ${tradeButton("sell", g.id, "max", "\u5168\u8CE3", owned < 1, "\u884C\u56CA\u5187\u5462\u6A23")}
       </div>` : ""}
     </li>`;
     }).join("");
     const summary = held.length ? held.map((lot) => `${lot.name} \xD7${lot.qty}`).join("\u3001") : "\u884C\u56CA\u672A\u6709\u8CA8";
     const body = `<h1 id="screen-title" class="visually-hidden" tabindex="-1">\u5E02\u96C6</h1>
+    ${renderTicker()}
+    ${renderOrders()}
     <section class="hold" aria-label="\u6211\u5605\u5B58\u8CA8">
       <div class="hold-head">
         <h2>\u6211\u5605\u5B58\u8CA8 <span>${held.length}</span></h2>
@@ -2785,26 +3213,47 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       <p class="hold-summary">${esc(summary)}</p>
       ${view === "held" ? renderHold(held) : ""}
     </section>
-    ${view === "all" ? `<p id="trade-hint" class="visually-hidden">\u8CB7\u5165\u540C\u8CE3\u51FA\u53EA\u6703\u51FA\u73FE\u55BA\u63C0\u4E2D\u5605\u8CA8\u3002\u6301\u6709\u7684\u8CA8\u6703\u6A19\u660E\u6301\u6709\u6578\u91CF\u3002</p>
+    ${view === "all" ? `<p id="trade-hint" class="visually-hidden">\u63C0\u4E2D\u4E00\u4EF6\u8CA8\uFF0C\u5C31\u53EF\u4EE5\u8CB7\u4E00\u4EF6\u3001\u8CB7\u4E94\u4EF6\u3001\u8CB7\u6EFF\uFF0C\u6216\u8005\u8CE3\u4E00\u4EF6\u3001\u5168\u8CE3\u3002</p>
     <ul class="good-list">${rows}</ul>` : ""}`;
     return marketFrame("market", streetForWeather(), body);
   }
+  function linkLabel(plan) {
+    if (!plan || plan.link === "here") return "\u800C\u5BB6";
+    if (plan.link === "direct") return `\u76F4\u901A \xB7 ${plan.silver} \u5169 \xB7 ${plan.days} \u65E5`;
+    if (plan.link === "gateway") return `\u95DC\u53E3 \xB7 ${plan.silver} \u5169 \xB7 ${plan.days} \u65E5`;
+    if (plan.link === "beyond") return `\u672A\u76F4\u901A \xB7 \u5148\u53BB${plan.nextName} \xB7 \u5171 ${plan.hops} \u7A0B`;
+    return "\u672A\u901A";
+  }
   function renderMap() {
     const here = cityById(state.cityId);
-    const region = regionById(here.regionId);
-    const specialties = region.cheap.map((id) => goodById(id).name).join("\u3001");
-    const rows = neighbors(state).map((city2) => {
-      const via = city2.gateway ? `${esc(regionById(city2.regionId).name)} \xB7 ` : "";
-      const upkeep = city2.cost.upkeep ? `\uFF0C\u8173\u592B ${city2.cost.upkeep} \u5169` : "";
+    const atlas = worldAtlas(state);
+    const cityTotal = atlas.reduce((sum, region) => sum + region.cities.length, 0);
+    const regionId = ui.mapRegion || here.regionId;
+    const focus = atlas.find((region) => region.id === regionId) || atlas[0];
+    const direct = neighbors(state).map((city2) => {
+      const kind = city2.gateway ? "\u95DC\u53E3" : "\u76F4\u901A";
+      const fare = `${kind} \xB7 ${city2.cost.total} \u5169 \xB7 ${city2.cost.days} \u65E5`;
       return `<li class="city-row">
-      <div><span class="city-name">${esc(city2.name)}</span><p>${via}${esc(city2.line)} \u8DEF\u8CBB ${city2.cost.silver} \u5169${upkeep} \xB7 ${city2.cost.days} \u65E5</p></div>
+      <div><span class="city-name">${esc(city2.name)}</span><p class="fare">${esc(fare)}</p><p>${esc(regionById(city2.regionId).name)}</p></div>
       <button type="button" class="city-go" data-act="ask-travel" data-id="${city2.id}">\u555F\u7A0B</button>
     </li>`;
     }).join("");
-    const body = `<h1 id="screen-title" class="section-head" tabindex="-1">\u800C\u5BB6\u55BA${esc(here.name)}</h1>
-    <p class="empty">${esc(region.name)} \xB7 \u672C\u5730\u5E73\uFF1A${esc(specialties)} \xB7 \u53EF\u5B78${esc(studyOffer(state).name)}</p>
-    <p class="empty">${esc(here.line)} \u7B2C ${state.day} \u65E5 \xB7 ${esc(seasonLabel(state.day))} \xB7 ${esc(weatherLabel(state.day))}</p>
-    <ul class="city-list">${rows}</ul>`;
+    const chips = atlas.map((region) => `<button type="button" class="chip${region.id === focus.id ? " is-on" : ""}" data-act="map-region" data-id="${region.id}" aria-pressed="${region.id === focus.id}">${esc(region.name)}</button>`).join("");
+    const cities = focus.cities.map((city2) => {
+      const go = city2.plan?.link === "direct" || city2.plan?.link === "gateway";
+      return `<li class="city-row">
+      <div><span class="city-name">${esc(city2.name)}</span><p class="fare">${esc(linkLabel(city2.plan))}</p><p>${esc(city2.line)}</p></div>
+      ${go ? `<button type="button" class="city-go" data-act="ask-travel" data-id="${city2.id}">\u555F\u7A0B</button>` : `<button type="button" class="city-go" data-act="map-blocked" data-id="${city2.id}" aria-disabled="true" data-reason="${esc(linkLabel(city2.plan))}">${city2.plan?.link === "here" ? "\u800C\u5BB6" : "\u672A\u76F4\u901A"}</button>`}
+    </li>`;
+    }).join("");
+    const body = `<h1 id="screen-title" class="section-head" tabindex="-1">\u5730\u5716 \xB7 ${atlas.length} \u5340 \xB7 ${cityTotal} \u57CE</h1>
+    <p class="empty">\u800C\u5BB6\u55BA${esc(here.name)} \xB7 \u7B2C ${state.day} \u65E5 \xB7 ${esc(seasonLabel(state.day))} \xB7 ${esc(weatherLabel(state.day))}${state.heat ? ` \xB7 \u71B1\u5EA6 ${state.heat}` : ""}\u3002\u63C0\u5340\u5C31\u53EF\u4EE5\u7747\u6652\u4E00\u767E\u57CE\u3002</p>
+    <div class="region-picks" role="group" aria-label="\u5341\u5340">${chips}</div>
+    <h2 class="section-head">${esc(focus.name)} \xB7 10 \u57CE \xB7 \u5E73\u8CA8 ${esc(focus.cheap.join("\u3001"))}</h2>
+    <ul class="city-list">${cities}</ul>
+    <h2 class="section-head">\u800C\u5BB6\u53BB\u5230</h2>
+    <ul class="city-list">${direct}</ul>
+    <p class="empty day-guide">${esc(DAY_GUIDE)}</p>`;
     return marketFrame("map", streetForWeather(), body);
   }
   function nightButton(label, action, disabled, reason, icon = "", primary = false) {
@@ -2849,6 +3298,26 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       nightButton("\u4E0D\u4E0A\u67B6", "pass", false, "", ICONS.crate)
     ].join("");
   }
+  function nightCost(cust) {
+    if (!cust) return "";
+    if (cust.kind === "pawn") {
+      const bid = quote(state, cust.goodId).bid;
+      const diff = bid - cust.ask;
+      const word2 = diff >= 0 ? "\u8CFA" : "\u8755";
+      return `<p class="hint">\u5165\u624B ${cust.ask} \u5169 \xB7 \u5E02\u96C6\u8CE3 ${bid} \xB7 \u8F49\u624B${word2} ${Math.abs(diff)}</p>`;
+    }
+    if (cust.kind === "smith") {
+      const margin2 = offerMargin(state, cust.goodId, 0);
+      const now = margin2.known ? `\u800C\u5BB6\u6210\u672C ${margin2.avg} \u5169\uFF0C` : "\u6210\u672C\u672A\u8A18\uFF0C";
+      return `<p class="hint">${now}\u4FEE\u88DC\u8CBB ${cust.ask} \u5169\u6703\u8A08\u5165\u6210\u672C\u3002</p>`;
+    }
+    if (cust.kind === "tip") return `<p class="hint">\u5462\u55AE\u98A8\u8072 ${cust.ask} \u5169\u3002</p>`;
+    const margin = offerMargin(state, cust.goodId, cust.offer);
+    if (!margin.known) return `<p class="hint">\u6210\u672C\u672A\u8A18 \xB7 \u51FA\u50F9 ${cust.offer} \u5169</p>`;
+    const word = margin.profit >= 0 ? "\u8CFA" : "\u8755";
+    const partial = margin.partial ? `\uFF08${margin.knownQty} \u4EF6\u6709\u6578\uFF09` : "";
+    return `<p class="hint">\u6210\u672C ${margin.avg} \u5169${partial} \xB7 \u5462\u55AE${word} ${Math.abs(margin.profit)}</p>`;
+  }
   function pawnNote(cust) {
     if (cust.kind !== "pawn") return "";
     const label = { fake: "\u5047\u8CA8", worn: "\u820A\u8CA8", fine: "\u4E0A\u4F73", sound: "\u5E73\u8CA8" }[cust.condition];
@@ -2860,7 +3329,9 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     const shown = state.display || [];
     const chips = held.length ? held.map((lot) => {
       const on = shown.includes(lot.id);
-      return `<button type="button" class="chip${on ? " is-on" : ""}" data-act="display" data-id="${lot.id}" aria-pressed="${on}">${esc(lot.name)} \xD7${lot.qty}</button>`;
+      const margin = offerMargin(state, lot.id, lot.bid);
+      const cost = margin.known ? ` \xB7 \u6210\u672C ${margin.avg}` : "";
+      return `<button type="button" class="chip${on ? " is-on" : ""}" data-act="display" data-id="${lot.id}" aria-pressed="${on}">${esc(lot.name)} \xD7${lot.qty}${cost}</button>`;
     }).join("") : `<p class="empty">\u884C\u56CA\u672A\u6709\u8CA8\u53EF\u4EE5\u64FA\u3002</p>`;
     return `<section class="cabinet" aria-label="\u5C55\u6AC3">
     <h2>\u5C55\u6AC3 ${shown.length}/${DISPLAY_MAX}</h2>
@@ -2887,6 +3358,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
         <span class="offer-price">${board.current.offer} \u5169</span>
       </div>
       ${pawnNote(board.current)}
+      ${nightCost(board.current)}
       <div class="bargain-actions">${nightActions(board.current)}</div>`;
     } else {
       bargain = `<p class="night-kicker">\u4ECA\u65E5\u4EBA\u6D41 ${esc(board.traffic.label)}</p>${bargain}`;
@@ -3148,13 +3620,35 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       return;
     }
     if (act === "buy" || act === "sell") {
-      const result = (act === "buy" ? buy : sell)(state, button.dataset.id, 1);
+      const id = button.dataset.id;
+      const qty = button.dataset.qty === "max" ? act === "buy" ? maxBuy(state, id) : state.inventory[id] || 0 : Number(button.dataset.qty || 1);
+      if (!Number.isInteger(qty) || qty < 1) {
+        fail(act === "buy" ? "\u8CB7\u5514\u5230" : "\u884C\u56CA\u5187\u5462\u6A23");
+        return;
+      }
+      const result = (act === "buy" ? buy : sell)(state, id, qty);
       if (!result.ok) {
         fail(result.reason);
         return;
       }
       sfxCoin();
       commit(result);
+      return;
+    }
+    if (act === "fill-order") {
+      const result = fillOrder(state, button.dataset.id);
+      if (!result.ok) {
+        fail(result.reason);
+        return;
+      }
+      sfxDeal();
+      commit(result);
+      return;
+    }
+    if (act === "map-region") {
+      ui.mapRegion = button.dataset.id;
+      sfxTab();
+      paint();
       return;
     }
     if (act === "buy-tool" || act === "sell-tool" || act === "hire" || act === "dismiss") {
@@ -3193,12 +3687,17 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     if (act === "ask-travel") {
       const dest = cityById(button.dataset.id);
       const row = neighbors(state).find((c) => c.id === dest.id);
+      if (!row) {
+        fail("\u5462\u689D\u8DEF\u672A\u901A");
+        return;
+      }
+      const short = state.silver < row.cost.total;
       ui.pending = { kind: "travel", destId: dest.id };
       openGate({
         title: `\u53BB${dest.name}`,
-        body: `\u7531${cityById(state.cityId).name}\u51FA\u767C\uFF0C\u8DEF\u8CBB ${row.cost.silver} \u5169${row.cost.upkeep ? `\uFF0C\u8173\u592B ${row.cost.upkeep} \u5169` : ""}\uFF0C\u884C ${row.cost.days} \u65E5\u3002`,
-        actions: [
-          { value: "stay", label: "\u7559\u4F4E", focus: true },
+        body: short ? `\u7531${cityById(state.cityId).name}\u53BB${dest.name}\u8981 ${row.cost.total} \u5169\uFF0C\u884C ${row.cost.days} \u65E5\u3002\u800C\u5BB6\u9280\u5169\u5514\u5920\u3002` : `\u7531${cityById(state.cityId).name}\u51FA\u767C\uFF0C\u8DEF\u8CBB ${row.cost.silver} \u5169${row.cost.upkeep ? `\uFF0C\u8173\u592B ${row.cost.upkeep} \u5169` : ""}\uFF0C\u884C ${row.cost.days} \u65E5\u3002\u5230\u57D7\u6703\u8F49\u65E5\u5B50\u3001\u5929\u6C23\u540C\u5E02\u50F9\u3002`,
+        actions: short ? [{ value: "stay", label: "\u77E5\u9053\u4E86", primary: true }] : [
+          { value: "stay", label: "\u7559\u4F4E" },
           { value: "go", label: "\u555F\u7A0B", primary: true }
         ]
       });
@@ -3263,24 +3762,32 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
   function onChange(event) {
     if (event.target.name === "auspice") ui.auspice = event.target.value;
   }
+  var gateChoice = "";
   function openGate({ title, body, actions, voice = true }) {
+    gateChoice = "";
     gateTitle.textContent = title;
     gateBody.textContent = body;
     gateActions.replaceChildren();
     for (const action of actions) {
       const button = document.createElement("button");
-      button.type = "submit";
+      button.type = "button";
       button.value = action.value;
       button.textContent = action.label;
       button.className = action.primary ? "primary" : "ghost";
-      if (action.focus) button.autofocus = true;
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        gateChoice = action.value;
+        if (gate.open) gate.close(action.value);
+      });
       gateActions.append(button);
     }
     if (!gate.open) gate.showModal();
     if (voice) sfxEvent();
   }
   function onGateClose() {
-    const value = gate.returnValue;
+    const value = confirmChoice(gateChoice, gate.returnValue);
+    gateChoice = "";
     gate.returnValue = "";
     const pending = ui.pending;
     ui.pending = null;
@@ -3307,6 +3814,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       }
       sfxDepart();
       state = result.state;
+      ui.screen = "market";
+      ui.scroll = 0;
       writeSave();
       if (!result.event) sfxArrive();
       if (result.event) {
@@ -3333,25 +3842,21 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     }
     paint(true);
   }
-  function installClosedByFallback() {
-    if ("closedBy" in HTMLDialogElement.prototype) return;
-    let pressedOutside = false;
-    const outside = (event) => {
-      const rect = gate.getBoundingClientRect();
-      return event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom;
-    };
-    gate.addEventListener("pointerdown", (event) => {
-      pressedOutside = outside(event);
-    });
-    gate.addEventListener("pointerup", (event) => {
-      if (pressedOutside && outside(event)) gate.close();
-    });
-  }
   app.addEventListener("click", onClick);
   app.addEventListener("submit", onSubmit);
   app.addEventListener("change", onChange);
   gate.addEventListener("close", onGateClose);
-  installClosedByFallback();
+  gate.addEventListener("click", (event) => {
+    if (event.target !== gate || !gate.open) return;
+    gateChoice = "";
+    gate.close("");
+  });
+  gate.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    gateChoice = "";
+    if (gate.open) gate.close("");
+  });
+  gate.querySelector("form")?.addEventListener("submit", (event) => event.preventDefault());
   mountVoiceToggle();
   document.addEventListener("pointerdown", () => unlockAudio(), { passive: true });
   document.addEventListener("visibilitychange", () => {
