@@ -562,21 +562,49 @@ legend { color: var(--gold); padding: 0; }
   letter-spacing: 0.2em;
 }
 
-.paper { text-align: center; }
+.paper {
+  text-align: center;
+  background:
+    linear-gradient(180deg, rgb(58 44 34 / 0.96), rgb(32 24 20 / 0.96));
+  border-color: rgb(176 64 52 / 0.45);
+}
 
-.seal {
-  width: 3.2rem;
-  height: 3.2rem;
-  margin: 0.2rem auto 0.6rem;
-  border: 1px solid var(--cyan);
-  border-radius: 50%;
+.seal-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.15rem 0 0.45rem;
+}
+
+.chop {
+  width: 3.35rem;
+  height: 3.35rem;
   display: grid;
   place-items: center;
-  color: var(--cyan);
+  border: 3px solid #c43830;
+  color: #e15a4e;
   font-family: var(--serif);
-  letter-spacing: 0.12em;
-  box-shadow: 0 0 16px rgb(70 220 255 / 0.28);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.05;
+  transform: rotate(-8deg);
+  background:
+    radial-gradient(circle at 32% 28%, rgb(225 90 78 / 0.2), transparent 58%),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgb(140 36 30 / 0.16) 3px);
+  box-shadow: inset 0 0 0 1px rgb(140 32 28 / 0.7);
 }
+
+.chop span { display: block; max-width: 2.2rem; text-wrap: balance; }
+
+.chop.is-round {
+  border-radius: 50%;
+  transform: rotate(7deg);
+  letter-spacing: 0.08em;
+}
+
+.chop.is-tilt { transform: rotate(-2deg); }
 
 .paper h1 { font-size: 1.8rem; letter-spacing: 0.18em; color: var(--gold); }
 
@@ -1623,18 +1651,214 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     state2.seenRegions[regionId] = true;
     state2.points = (state2.points || 0) + 1;
   }
+  var BIRTH_HOUSES = [
+    { id: "poor", name: "\u8CA7\u82E6\u4E4B\u5BB6", weight: 34, chop: "\u8CA7\u7C4D", silver: [0, 8], rep: [0, 0], face: 1, eye: 1, talk: 1 },
+    { id: "modest", name: "\u5C0F\u5EB7\u4E4B\u5BB6", weight: 32, chop: "\u5EB7\u7C4D", silver: [72, 168], rep: [0, 2], face: 2, eye: 2, talk: 1 },
+    { id: "shop", name: "\u5546\u6236\u4E4B\u5F8C", weight: 14, chop: "\u5546\u7C4D", silver: [16, 46], rep: [1, 3], face: 2, eye: 1, talk: 2 },
+    { id: "debt", name: "\u8CA0\u50B5\u4E4B\u5BB6", weight: 12, chop: "\u50B5\u7C4D", silver: [48, 108], rep: [0, 1], face: 1, eye: 1, talk: 2 },
+    { id: "fallen", name: "\u6C92\u843D\u4E16\u5BB6", weight: 6, chop: "\u4E16\u5BB6", silver: [0, 8], rep: [12, 18], face: 3, eye: 2, talk: 2 },
+    { id: "rich", name: "\u8C6A\u5BCC\u4E4B\u5BB6", weight: 2, chop: "\u8C6A\u7C4D", silver: [640, 1080], rep: [4, 8], face: 3, eye: 2, talk: 2 }
+  ];
+  var BIRTH_TRADES = {
+    poor: ["\u6F01\u6236", "\u9E7D\u4E01", "\u8173\u592B", "\u85E5\u8FB2"],
+    modest: ["\u7E54\u6236", "\u8336\u6236", "\u7CE7\u6236", "\u9435\u5320"],
+    shop: ["\u7DA2\u7DDE\u5546", "\u8336\u6236", "\u9999\u6599\u5546"],
+    debt: ["\u99AC\u5546", "\u7DA2\u7DDE\u5546", "\u6D0B\u8CA8\u5546"],
+    fallen: ["\u66F8\u9999\u820A\u5BB6", "\u7DA2\u7DDE\u820A\u5BB6", "\u5B98\u5546\u820A\u5BB6"],
+    rich: ["\u9E7D\u5546", "\u6D0B\u8CA8\u5546", "\u7CE7\u5546"]
+  };
+  function rngInt(rng, lo, hi) {
+    return lo + Math.floor(rng() * (hi - lo + 1));
+  }
+  function pickWeighted(rng, table) {
+    const total = table.reduce((sum, item) => sum + item.weight, 0);
+    let cursor = rng() * total;
+    for (const item of table) {
+      cursor -= item.weight;
+      if (cursor < 0) return item;
+    }
+    return table[table.length - 1];
+  }
+  function birthLine(houseId, trade) {
+    const lines = {
+      poor: `\u7236\u6BCD\u4EE5${trade}\u70BA\u751F\uFF0C\u5BB6\u4E2D\u5E7E\u4E4E\u6C92\u6709\u9918\u9322\u3002\u82E5\u8981\u4E0A\u8DEF\uFF0C\u9808\u5148\u5728\u57CE\u4E2D\u6253\u5DE5\u3002`,
+      modest: `${trade}\u4E4B\u5BB6\u7565\u6709\u7A4D\u84C4\uFF0C\u8DB3\u5920\u505A\u5E7E\u7B46\u5C0F\u8CB7\u8CE3\u3002`,
+      shop: `\u7236\u6BCD\u7559\u4E0B\u4E00\u9593\u5C0F\u8216\uFF0C\u73FE\u91D1\u4E0D\u591A\uFF0C\u8216\u79DF\u537B\u6309\u671F\u8981\u7E73\u3002`,
+      debt: `\u624B\u4E0A\u6709\u4E9B\u73FE\u9280\uFF0C\u4F46\u4E00\u7B46\u50B5\u52D9\u5373\u5C07\u5230\u671F\u3002`,
+      fallen: `\u5BB6\u8072\u5C1A\u5728\uFF0C\u9322\u56CA\u5DF2\u7A7A\u3002\u591C\u88E1\u6216\u6709\u8CB4\u5BA2\u4F86\u554F\uFF0C\u53EA\u6015\u8CA8\u4E0D\u5728\u624B\u3002`,
+      rich: `\u7236\u6BCD\u662F${trade}\uFF0C\u9280\u888B\u8207\u884C\u56CA\u90FD\u9817\u8C50\u3002\u9019\u6A23\u7684\u958B\u5C40\u6975\u70BA\u5C11\u898B\u3002`
+    };
+    return lines[houseId];
+  }
+  function rollLife(rng = Math.random) {
+    const house = pickWeighted(rng, BIRTH_HOUSES);
+    const trades = BIRTH_TRADES[house.id];
+    const trade = trades[rngInt(rng, 0, trades.length - 1)];
+    const auspice = ["chun", "yu", "ye"][rngInt(rng, 0, 2)];
+    const city2 = CITIES[rngInt(rng, 0, CITIES.length - 1)];
+    const silver = rngInt(rng, house.silver[0], house.silver[1]);
+    const rep = rngInt(rng, house.rep[0], house.rep[1]);
+    const attrs = freshAttrs(auspice);
+    attrs.face = Math.max(attrs.face, house.face);
+    attrs.eye = Math.max(attrs.eye, house.eye);
+    attrs.talk = Math.max(attrs.talk, house.talk);
+    const inventory = {};
+    let rent = 0;
+    let debt = 0;
+    let debtDue = 0;
+    let display = [];
+    if (house.id === "modest") inventory[trades.includes("\u8336\u6236") && trade === "\u8336\u6236" ? "tea" : "rice"] = rngInt(rng, 1, 3);
+    if (house.id === "shop") {
+      inventory.silk = 1;
+      inventory.tea = rngInt(rng, 1, 2);
+      rent = rngInt(rng, 8, 14);
+      display = ["silk"];
+    }
+    if (house.id === "debt") {
+      debt = rngInt(rng, 90, 180);
+      debtDue = rngInt(rng, 7, 12);
+    }
+    if (house.id === "rich") {
+      inventory.silk = 2;
+      inventory.tea = 4;
+      inventory.pin = 1;
+    }
+    return {
+      auspice,
+      cityId: city2.id,
+      silver,
+      rep,
+      attrs,
+      inventory,
+      display,
+      birth: {
+        house: house.id,
+        houseName: house.name,
+        chop: house.chop,
+        trade,
+        stake: silver,
+        debt,
+        debtDue,
+        rent,
+        line: birthLine(house.id, trade)
+      }
+    };
+  }
   function createNew(name, auspice, cityId) {
     const trimmed = String(name ?? "").trim().slice(0, 12);
     if (!trimmed) return { ok: false, reason: "\u8ACB\u586B\u5BEB\u540D\u5B57" };
-    if (!AUSPICES[auspice]) return { ok: false, reason: "\u8ACB\u9078\u64C7\u751F\u8FB0" };
-    const start = cityById(cityId)?.id || CITIES[Math.floor(Math.random() * CITIES.length)].id;
-    const state2 = blankState(trimmed, auspice);
-    state2.cityId = start;
-    state2.attrs = freshAttrs(auspice);
-    state2.origin = { ...state2.attrs };
+    if (auspice && !AUSPICES[auspice]) return { ok: false, reason: "\u8ACB\u9078\u64C7\u751F\u8FB0" };
+    if (auspice) {
+      const start = cityById(cityId)?.id || CITIES[Math.floor(Math.random() * CITIES.length)].id;
+      const state3 = blankState(trimmed, auspice);
+      state3.cityId = start;
+      state3.attrs = freshAttrs(auspice);
+      state3.origin = { ...state3.attrs };
+      grantRegionPoint(state3);
+      if (auspice === "chun") state3.inventory.rice = 2;
+      return { ok: true, state: state3 };
+    }
+    const life = rollLife();
+    const state2 = blankState(trimmed, life.auspice);
+    state2.cityId = life.cityId;
+    state2.silver = life.silver;
+    state2.rep = life.rep;
+    state2.attrs = life.attrs;
+    state2.origin = { ...life.attrs };
+    state2.inventory = life.inventory;
+    state2.display = life.display;
+    state2.birth = life.birth;
     grantRegionPoint(state2);
-    if (auspice === "chun") state2.inventory.rice = 2;
+    state2.lastMessage = life.birth.line;
     return { ok: true, state: state2 };
+  }
+  function settleObligations(next) {
+    const birth = next.birth;
+    const notes = [];
+    if (!birth) return notes;
+    if (birth.debt > 0 && next.day >= birth.debtDue) {
+      if (next.silver >= birth.debt) {
+        const paid = birth.debt;
+        next.silver -= paid;
+        birth.debt = 0;
+        notes.push(`\u511F\u9084\u50B5\u52D9 ${paid} \u5169\u3002`);
+      } else {
+        next.rep = Math.max(0, next.rep - 1);
+        birth.debtDue = next.day + 4;
+        notes.push("\u50B5\u52D9\u5230\u671F\u800C\u9280\u5169\u4E0D\u8DB3\uFF0C\u671F\u9650\u5EF6\u5F8C\u56DB\u65E5\uFF0C\u8072\u671B\u4E0B\u964D\u3002");
+      }
+    }
+    if (birth.rent > 0 && next.day > 1 && next.day % 4 === 0) {
+      if (next.silver >= birth.rent) {
+        next.silver -= birth.rent;
+        notes.push(`\u7E73\u7D0D\u8216\u79DF ${birth.rent} \u5169\u3002`);
+      } else {
+        next.display = [];
+        birth.rent = 0;
+        notes.push("\u8216\u79DF\u672A\u7E73\uFF0C\u9918\u4E0B\u7684\u8216\u9762\u88AB\u6536\u56DE\u3002");
+      }
+    }
+    return notes;
+  }
+  var JOBS = [
+    { id: "dock", name: "\u78BC\u982D\u642C\u904B", blurb: "\u7A69\u59A5\uFF0C\u916C\u52DE\u4E0D\u9AD8\u3002" },
+    { id: "tea", name: "\u8336\u6A13\u5E6B\u5DE5", blurb: "\u916C\u52DE\u5FAE\u8584\uFF0C\u6216\u53EF\u807D\u5F97\u884C\u60C5\u3002" },
+    { id: "herb", name: "\u85E5\u8216\u5B78\u5F92", blurb: "\u916C\u52DE\u6700\u5C11\uFF0C\u5076\u5F97\u85E5\u6750\u6216\u820A\u65B9\u3002" },
+    { id: "escort", name: "\u4EE3\u9001\u8B77\u885B", blurb: "\u916C\u52DE\u8F03\u9AD8\uFF0C\u8DEF\u4E0A\u6709\u98A8\u96AA\u3002" }
+  ];
+  function work(state2, jobId) {
+    const job = JOBS.find((item) => item.id === jobId);
+    if (!job) return { ok: false, reason: "\u6C92\u6709\u9019\u4EFD\u77ED\u5DE5", state: state2 };
+    const next = clone(state2);
+    ensureMaps(next);
+    const roll = hash(next.day, next.cityId, jobId, next.silver, "work");
+    let pay = 4;
+    let note = "";
+    if (jobId === "dock") pay = 4 + roll % 3;
+    if (jobId === "tea") {
+      pay = 3;
+      if (roll % 3 === 0) {
+        const city2 = CITIES[roll % CITIES.length];
+        const goodId = regionById(city2.regionId).cheap[0];
+        next.effects.push({
+          id: `work-tip-${next.day}`,
+          regionId: city2.regionId,
+          title: "\u8336\u6A13\u9592\u8A71",
+          body: `\u8336\u5BA2\u8AAA${city2.name}\u8FD1\u65E5\u6436${goodById(goodId).name}\u3002`,
+          mods: { [goodId]: 0.12 },
+          untilDay: next.day + 2,
+          auto: true
+        });
+        note = `\u8336\u5BA2\u8AAA${city2.name}\u8FD1\u65E5\u6436${goodById(goodId).name}\u3002`;
+      }
+    }
+    if (jobId === "herb") {
+      pay = 2;
+      if (roll % 5 === 0 && carryUsed(next) < capacityOf(next)) {
+        addItem(next, "herb", 1);
+        note = "\u5E2B\u5085\u8AAA\u8D77\u820A\u65B9\uFF1A\u65B0\u7C73\u8207\u6E05\u6CC9\u53EF\u84B8\u6210\u767D\u98EF\uFF0C\u4E26\u7D66\u4E86\u4E00\u4EFD\u85E5\u6750\u3002";
+      } else if (roll % 5 === 1) {
+        note = "\u5E2B\u5085\u8AAA\u8D77\u820A\u65B9\uFF1A\u65B0\u7C73\u8207\u6E05\u6CC9\u53EF\u84B8\u6210\u767D\u98EF\u3002";
+      }
+    }
+    if (jobId === "escort") {
+      pay = 10 + roll % 5;
+      if (roll % 10 < 3) {
+        pay = Math.max(0, pay - 6);
+        next.rep = Math.max(0, next.rep - 1);
+        note = "\u8DEF\u4E0A\u9047\u96AA\uFF0C\u640D\u5931\u516D\u5169\uFF0C\u8072\u671B\u4E0B\u964D\u3002";
+      }
+    }
+    next.silver += pay;
+    next.day += 1;
+    coolHeat(next, 1);
+    next.nightIndex = 0;
+    next.nightNote = {};
+    next.effects = liveEffects(next);
+    const moved = applyRestock(next);
+    const dues = settleObligations(moved);
+    moved.lastMessage = [`\u505A\u4E86\u4E00\u65E5${job.name}\uFF0C\u5F97 ${pay} \u5169\u3002`, note, ...dues].filter(Boolean).join("");
+    return { ok: true, state: moved, pay };
   }
   function weatherTouch(weather, goodId) {
     if (weather === "rain" && goodId === "salt") return 0.16;
@@ -2274,7 +2498,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     if (event?.auto) next = applyAuto(next, event);
     const arrived = `\u5DF2\u62B5\u9054${cityById(destId).name}\u3002`;
     const notes = passageNotes(state2, next, { upkeep: paidUpkeep });
-    const pieces = [porterScatter, event ? event.body : "", arrived, ...notes].filter(Boolean);
+    const dues = settleObligations(next);
+    const pieces = [porterScatter, event ? event.body : "", arrived, ...notes, ...dues].filter(Boolean);
     next.lastMessage = pieces.join("");
     return { ok: true, state: next, event, cost };
   }
@@ -2533,6 +2758,14 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       const goodId = display[hash(state2.day, state2.cityId, "case") % display.length];
       list.push(buyerGuest(state2, list.length, goodId, true));
     }
+    if (state2.birth?.house === "fallen") {
+      const goodId = ["pin", "silk", "pearl"][hash(state2.day, state2.cityId, "patron") % 3];
+      const guest = buyerGuest(state2, list.length, goodId, false);
+      guest.role = "\u8CB4\u5BA2";
+      guest.offer = Math.max(guest.offer + 6, Math.round(guest.baseOffer * 1.35));
+      guest.line = `\u807D\u904E\u4F60\u5BB6\u7684\u540D\u5B57\u3002${goodById(goodId).name}\u82E5\u5728\uFF0C\u6211\u51FA\u9AD8\u50F9\u3002`;
+      list.push(guest);
+    }
     return list;
   }
   function holdingReport(state2) {
@@ -2594,7 +2827,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     if (action === "pass") return passGuest(state2, "\u4F60\u6C92\u6709\u4E0A\u67B6\u3002");
     if (have(state2, cust.goodId) < 1) return { ok: false, reason: "\u884C\u56CA\u6C92\u6709\u9019\u9805\u8CA8\u7269", state: state2 };
     if (action !== "deal" && action !== "haggle") return { ok: false, reason: "\u6C92\u6709\u9019\u4E00\u6B65", state: state2 };
-    const accept = action === "deal" || hash(state2.day, state2.cityId, cust.index, "haggle") % 5 < 3;
+    const strict = state2.birth?.house === "poor";
+    const accept = action === "deal" || hash(state2.day, state2.cityId, cust.index, "haggle") % 5 < (strict ? 1 : 3);
     const next = clone(state2);
     ensureMaps(next);
     next.nightIndex += 1;
@@ -2752,7 +2986,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     next.effects = liveEffects(next);
     next = applyRestock(next);
     const notes = passageNotes(state2, next, { quietDay: true });
-    next.lastMessage = [`\u65B0\u7684\u4E00\u65E5\uFF0C\u7B2C ${next.day} \u65E5\uFF0C${weatherLabel(next.day)}\u3002`, ...notes].join("");
+    const dues = settleObligations(next);
+    next.lastMessage = [`\u65B0\u7684\u4E00\u65E5\uFF0C\u7B2C ${next.day} \u65E5\uFF0C${weatherLabel(next.day)}\u3002`, ...notes, ...dues].join("");
     return { ok: true, state: next };
   }
   function taughtAttr(cityId) {
@@ -2783,7 +3018,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     next.effects = liveEffects(next);
     next = applyRestock(next);
     const notes = passageNotes(state2, next, { quietDay: true });
-    next.lastMessage = [`\u5B78\u4E86${offer.days}\u65E5${offer.name}\uFF0C\u73FE\u5728\u662F ${next.attrs[offer.attr]}\u3002\u82B1\u8CBB ${offer.fee} \u5169\u3002`, ...notes].join("");
+    const dues = settleObligations(next);
+    next.lastMessage = [`\u5B78\u4E86${offer.days}\u65E5${offer.name}\uFF0C\u73FE\u5728\u662F ${next.attrs[offer.attr]}\u3002\u82B1\u8CBB ${offer.fee} \u5169\u3002`, ...notes, ...dues].join("");
     return { ok: true, state: next, gain: 1 };
   }
   function spendPoint(state2, attrId) {
@@ -2823,6 +3059,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       display: state2.display || [],
       heat: state2.heat || 0,
       orderFill: state2.orderFill || {},
+      birth: state2.birth || null,
       points: state2.points || 0,
       deals: state2.deals || 0,
       seenRegions: state2.seenRegions || {},
@@ -2854,6 +3091,22 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       if (out.length >= DISPLAY_MAX) break;
     }
     return out;
+  }
+  function cleanBirth(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const houses = ["poor", "modest", "shop", "debt", "fallen", "rich"];
+    if (!houses.includes(raw.house)) return null;
+    return {
+      house: raw.house,
+      houseName: String(raw.houseName || ""),
+      chop: String(raw.chop || "\u5546\u7C4D"),
+      trade: String(raw.trade || ""),
+      stake: Math.max(0, Math.round(Number(raw.stake) || 0)),
+      debt: Math.max(0, Math.round(Number(raw.debt) || 0)),
+      debtDue: Math.max(0, Math.round(Number(raw.debtDue) || 0)),
+      rent: Math.max(0, Math.round(Number(raw.rent) || 0)),
+      line: String(raw.line || "")
+    };
   }
   function cleanOrderFill(raw) {
     const out = {};
@@ -2914,6 +3167,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       display: cleanDisplay(raw.display, raw.inventory),
       heat: Number.isFinite(Number(raw.heat)) ? Math.max(0, Math.round(Number(raw.heat))) : (raw.inventory.hot || 0) * 2,
       orderFill: cleanOrderFill(raw.orderFill),
+      birth: cleanBirth(raw.birth),
       points: Math.max(0, raw.points || 0),
       deals: Math.max(0, raw.deals || 0),
       seenRegions: { ...raw.seenRegions || {} },
@@ -2960,8 +3214,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     pending: null,
     scroll: 0,
     marketView: "all",
-    mapRegion: "",
-    birthCity: ""
+    mapRegion: ""
   };
   var state = null;
   var lastScreen = "";
@@ -2973,9 +3226,6 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       '"': "&quot;",
       "'": "&#39;"
     })[ch]);
-  }
-  function rollBirthCity() {
-    ui.birthCity = CITIES[Math.floor(Math.random() * CITIES.length)].id;
   }
   function readSave() {
     try {
@@ -3071,25 +3321,15 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
   </section>`;
   }
   function renderBirth() {
-    const choices = Object.values(AUSPICES).map((item) => `
-    <label class="choice">
-      <input type="radio" name="auspice" value="${item.id}" ${ui.auspice === item.id ? "checked" : ""}>
-      <span><b>${esc(item.name)}</b><span class="hint"> ${esc(item.line)}</span></span>
-    </label>`).join("");
     return `<section class="screen title-screen">
     ${scene(ART.title, "", true)}
     ${rainLayer(true)}
     <div class="cluster">
       <form class="dock-form" id="birth-form">
         <h1 id="screen-title" tabindex="-1">\u51FA\u751F</h1>
-        <p class="hint">\u7C4D\u8CAB\uFF1A${esc(cityById(ui.birthCity)?.name || "")} \xB7 ${esc(regionById(cityById(ui.birthCity)?.regionId)?.name || "")}</p>
-        <p class="hint">\u65B0\u7684\u884C\u5546\u5C07\u5728\u6B64\u5730\u958B\u5E02\u3002</p>
+        <p class="hint">\u53EA\u8A18\u540D\u5B57\u3002\u5BB6\u4E16\u3001\u7C4D\u8CAB\u3001\u9280\u5169\u548C\u50B5\u9805\u6703\u4E00\u6B21\u5BEB\u5B9A\uFF0C\u4EBA\u4EBA\u4E0D\u540C\u3002</p>
         <label for="merchant-name">\u540D\u5B57</label>
         <input id="merchant-name" name="name" type="text" maxlength="12" autocomplete="name" enterkeyhint="done" required autofocus>
-        <fieldset>
-          <legend>\u751F\u8FB0</legend>
-          ${choices}
-        </fieldset>
         ${ui.error ? `<p class="form-error" id="birth-error">${esc(ui.error)}</p>` : ""}
         <button type="submit" class="primary">\u843D\u7C4D</button>
         <button type="button" class="text-btn" data-act="back-title">\u8FD4\u56DE</button>
@@ -3099,20 +3339,33 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
   }
   function renderCertificate() {
     const born = AUSPICES[state.auspice];
+    const life = state.birth;
+    const place = cityById(state.cityId);
+    const region = regionById(place.regionId);
+    const debt = life?.debt ? `\u6B20 ${life.debt} \u5169\uFF0C\u7B2C ${life.debtDue} \u65E5\u524D\u9084` : "\u7121";
+    const rent = life?.rent ? `\u6BCF\u56DB\u65E5 ${life.rent} \u5169` : "\u7121";
     return `<section class="screen title-screen">
     ${scene(ART.shop, "", true)}
     <div class="cluster">
       <article class="paper">
-        <div class="seal" aria-hidden="true">\u5370</div>
+        <div class="seal-row" aria-hidden="true">
+          <span class="chop"><span>\u5E9C\u5370</span></span>
+          <span class="chop is-round"><span>${esc(life?.chop || "\u5546\u7C4D")}</span></span>
+          <span class="chop is-tilt"><span>\u7C4D\u8CAB</span></span>
+        </div>
         <h1 id="screen-title" tabindex="-1">\u884C\u5546\u7D19</h1>
         <dl>
           <div><dt>\u59D3\u540D</dt><dd>${esc(state.name)}</dd></div>
-          <div><dt>\u751F\u8FB0</dt><dd>${esc(born.name)}</dd></div>
-          <div><dt>\u7C4D\u8CAB</dt><dd>${esc(cityById(state.cityId).name)}</dd></div>
+          <div><dt>\u751F\u8FB0</dt><dd>${esc(born?.name || "\u672A\u8A18")}</dd></div>
+          <div><dt>\u7C4D\u8CAB</dt><dd>${esc(place.name)} \xB7 ${esc(region.name)}</dd></div>
+          <div><dt>\u5BB6\u4E16</dt><dd>${esc(life?.houseName || "\u820A\u6A94\u672A\u8A18")}</dd></div>
+          <div><dt>\u7236\u6BCD</dt><dd>${esc(life?.trade || "\u672A\u8A18")}</dd></div>
+          <div><dt>\u8D77\u5BB6\u9280\u5169</dt><dd>${life ? life.stake : state.silver}</dd></div>
+          <div><dt>\u50B5\u52D9</dt><dd>${esc(debt)}</dd></div>
+          <div><dt>\u8216\u79DF</dt><dd>${esc(rent)}</dd></div>
           <div><dt>\u8077\u929C</dt><dd>${esc(rankOf(state.rep))}</dd></div>
-          <div><dt>\u65E5\u5B50</dt><dd>\u7B2C ${state.day} \u65E5 \xB7 ${esc(seasonLabel(state.day))}</dd></div>
         </dl>
-        <p class="hint">${esc(born.line)}</p>
+        <p class="hint">${esc(life?.line || born?.line || "")}</p>
         <button type="button" class="primary" data-act="${ui.certBack ? "back-play" : "embark"}">${ui.certBack ? "\u8FD4\u56DE" : "\u4E0A\u8DEF"}</button>
       </article>
     </div>
@@ -3208,6 +3461,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     }).join("");
     const summary = held.length ? held.map((lot) => `${lot.name} \xD7${lot.qty}`).join("\u3001") : "\u884C\u56CA\u672A\u6709\u8CA8\u7269";
     const body = `<h1 id="screen-title" class="visually-hidden" tabindex="-1">\u5E02\u96C6</h1>
+    ${state.silver < 15 ? `<p class="empty">\u9280\u5169\u4E0D\u8DB3\u5341\u4E94\u3002\u53EF\u5230\u4EBA\u7269\u9801\u6253\u5DE5\uFF0C\u5148\u8CFA\u4E00\u7B46\u672C\u9322\u3002</p>` : ""}
     ${renderTicker()}
     ${renderOrders()}
     <section class="hold" aria-label="\u6211\u7684\u5B58\u8CA8">
@@ -3395,6 +3649,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       <div><span>\u884C\u56CA</span><strong>${pack.used}/${pack.max}</strong></div>
     </div>
     <p class="empty">\u9032\u5EA6\u5DF2\u81EA\u52D5\u4FDD\u5B58\u65BC\u672C\u6A5F\u3002</p>
+    ${workBlock()}
     <p class="empty">
       <button type="button" class="text-btn" data-act="show-cert">\u67E5\u770B\u884C\u5546\u7D19</button>
       <button type="button" class="text-btn" data-act="ask-new">\u958B\u65B0\u6A94</button>
@@ -3420,6 +3675,13 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       <button type="button" class="text-btn" data-act="dismiss" ${state.porters || 0 ? "" : 'aria-disabled="true" data-reason="\u6C92\u6709\u8173\u592B"'}>\u89E3\u6563\u8173\u592B</button>
     </p>`;
     return marketFrame("person", streetForWeather(), body, { street: false, short: true });
+  }
+  function workBlock() {
+    const rows = JOBS.map((job) => `<li class="craft-row"><div><span class="city-name">${esc(job.name)}</span><p>${esc(job.blurb)}</p></div>
+    <button type="button" class="craft-go" data-act="work" data-id="${job.id}">\u505A\u4E00\u65E5</button></li>`).join("");
+    return `<h2 class="section-head">\u6253\u5DE5</h2>
+    <p class="empty">\u4EA4\u6613\u5C1A\u672A\u6210\u6C23\u5019\u6642\uFF0C\u53EF\u5728\u57CE\u4E2D\u505A\u4E00\u65E5\u77ED\u5DE5\u3002\u9577\u9060\u4ECD\u4E0D\u5982\u884C\u5546\u3002</p>
+    <ul class="craft-list">${rows}</ul>`;
   }
   function lessonBlock() {
     const lesson = studyOffer(state);
@@ -3553,7 +3815,6 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     if (sheet) ui.scroll = sheet.scrollTop;
     const act = button.dataset.act;
     if (act === "birth") {
-      rollBirthCity();
       ui.screen = "birth";
       ui.error = "";
       sfxTap();
@@ -3755,6 +4016,16 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       setState(result.state);
       return;
     }
+    if (act === "work") {
+      const result = work(state, button.dataset.id);
+      if (!result.ok) {
+        fail(result.reason);
+        return;
+      }
+      sfxCoin();
+      setState(result.state);
+      return;
+    }
     if (act === "craft") {
       const result = craft(state, button.dataset.id);
       if (!result.ok) {
@@ -3770,7 +4041,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     if (form.id !== "birth-form") return;
     event.preventDefault();
     const data = new FormData(form);
-    const made = createNew(data.get("name"), data.get("auspice") || ui.auspice, ui.birthCity);
+    const made = createNew(data.get("name"));
     if (!made.ok) {
       ui.error = made.reason;
       paint();
@@ -3819,7 +4090,6 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     if (!pending) return;
     if (pending.kind === "new-game") {
       if (value !== "go") return;
-      rollBirthCity();
       ui.screen = "birth";
       ui.error = "";
       sfxTap();
