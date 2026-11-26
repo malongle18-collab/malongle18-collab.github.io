@@ -53,6 +53,35 @@ button, input { font-size: 1rem; }
   outline-offset: 3px;
 }
 
+.voice-toggle {
+  position: fixed;
+  z-index: 30;
+  top: calc(0.4rem + env(safe-area-inset-top, 0px));
+  right: max(0.45rem, calc((100vw - 30rem) / 2 + 0.45rem));
+  width: 2.75rem;
+  height: 2.75rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgb(243 228 191 / 0.45);
+  background: rgb(8 12 18 / 0.72);
+  color: var(--gold);
+  cursor: pointer;
+}
+
+.voice-toggle[aria-pressed="false"] { color: #8d8272; }
+
+.voice-toggle.is-speaking {
+  color: var(--cyan);
+  border-color: rgb(103 233 255 / 0.7);
+}
+
+.voice-toggle svg { width: 1.25rem; height: 1.25rem; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .voice-toggle.is-speaking { box-shadow: 0 0 12px rgb(103 233 255 / 0.45); }
+}
+
 .skip-link {
   position: absolute;
   left: 0.6rem;
@@ -975,6 +1004,144 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       routes.push({ a: a.id, b: b.id, cost: 14, days: 2 });
     }
     return routes;
+  }
+
+  // js/voice.js
+  var VOICE_KEY = "hangshang-wanli-voice";
+  var primed = false;
+  var unlocked = false;
+  var chosen = null;
+  var keepAlive = 0;
+  var token = 0;
+  function voiceEnabled() {
+    try {
+      return localStorage.getItem(VOICE_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  }
+  function setVoiceEnabled(on) {
+    try {
+      localStorage.setItem(VOICE_KEY, on ? "on" : "off");
+    } catch {
+    }
+    if (!on) stopVoice();
+  }
+  function canSpeak() {
+    return typeof window !== "undefined" && "speechSynthesis" in window && typeof window.SpeechSynthesisUtterance === "function";
+  }
+  function synth() {
+    try {
+      return window.speechSynthesis;
+    } catch {
+      return null;
+    }
+  }
+  function rank(voice) {
+    const lang = String(voice?.lang || "").toLowerCase().replace(/_/g, "-");
+    if (lang.startsWith("zh-hk") || lang.startsWith("yue")) return 0;
+    if (lang.startsWith("zh-tw") || lang.startsWith("zh-hant")) return 1;
+    if (lang.startsWith("zh-cn") || lang.startsWith("zh-hans")) return 2;
+    if (lang.startsWith("zh")) return 3;
+    return 9;
+  }
+  function refreshVoices() {
+    const engine = synth();
+    if (!engine) return;
+    let voices = [];
+    try {
+      voices = engine.getVoices() || [];
+    } catch {
+      voices = [];
+    }
+    const usable = voices.filter((voice) => rank(voice) < 9).sort((a, b) => rank(a) - rank(b));
+    chosen = usable[0] || null;
+  }
+  function primeVoice() {
+    if (primed || !canSpeak()) return;
+    primed = true;
+    refreshVoices();
+    try {
+      window.speechSynthesis.addEventListener("voiceschanged", refreshVoices);
+    } catch {
+    }
+  }
+  function stopVoice() {
+    const engine = synth();
+    if (keepAlive) {
+      clearInterval(keepAlive);
+      keepAlive = 0;
+    }
+    token += 1;
+    if (!engine) return;
+    try {
+      engine.cancel();
+    } catch {
+    }
+  }
+  function watch(engine, id) {
+    if (keepAlive) clearInterval(keepAlive);
+    keepAlive = window.setInterval(() => {
+      if (id !== token) {
+        clearInterval(keepAlive);
+        keepAlive = 0;
+        return;
+      }
+      try {
+        if (!engine.speaking) {
+          clearInterval(keepAlive);
+          keepAlive = 0;
+          document.querySelector("#voice-toggle")?.classList.remove("is-speaking");
+          return;
+        }
+        engine.pause();
+        engine.resume();
+      } catch {
+        clearInterval(keepAlive);
+        keepAlive = 0;
+      }
+    }, 1e4);
+  }
+  function speak(text) {
+    const line = String(text || "").replace(/\s+/g, " ").trim();
+    if (!line || !voiceEnabled() || !canSpeak()) return;
+    primeVoice();
+    const engine = synth();
+    if (!engine) return;
+    const id = token + 1;
+    token = id;
+    const first = !unlocked;
+    unlocked = true;
+    const utter = () => {
+      if (id !== token || !voiceEnabled()) return;
+      try {
+        refreshVoices();
+        const utterance = new window.SpeechSynthesisUtterance(line);
+        utterance.lang = chosen?.lang || "zh-HK";
+        if (chosen) utterance.voice = chosen;
+        utterance.rate = 0.95;
+        const done = () => {
+          if (id !== token) return;
+          document.querySelector("#voice-toggle")?.classList.remove("is-speaking");
+        };
+        utterance.onend = done;
+        utterance.onerror = done;
+        engine.speak(utterance);
+        document.querySelector("#voice-toggle")?.classList.add("is-speaking");
+        watch(engine, id);
+      } catch {
+      }
+    };
+    if (first) {
+      utter();
+      return;
+    }
+    try {
+      engine.cancel();
+    } catch {
+      return;
+    }
+    window.setTimeout(utter, 60);
   }
 
   // js/economy.js
@@ -2155,6 +2322,30 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     if (heading && lastScreen !== ui.screen) heading.focus();
     lastScreen = ui.screen;
   }
+  function say(text) {
+    speak(text);
+  }
+  function mountVoiceToggle() {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "voice-toggle";
+    button.className = "voice-toggle";
+    button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l4 3V7L7 10H4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path class="voice-waves" d="M15 9.5a3.5 3.5 0 0 1 0 5M17.5 7a6.5 6.5 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+    document.body.append(button);
+    const sync = () => {
+      const on = voiceEnabled();
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+      button.setAttribute("aria-label", on ? "\u95DC\u9589\u8A9E\u97F3" : "\u958B\u555F\u8A9E\u97F3");
+    };
+    sync();
+    button.addEventListener("click", () => {
+      primeVoice();
+      const next = !voiceEnabled();
+      setVoiceEnabled(next);
+      sync();
+      if (next) say("\u8A9E\u97F3\u958B\u5497\u3002");
+    });
+  }
   function paint(announceMessage = false) {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const changed = lastScreen !== ui.screen;
@@ -2172,6 +2363,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
   function fail(reason) {
     if (state) state.lastMessage = reason;
     else ui.error = reason;
+    say(reason);
     paint(true);
   }
   function commit(result) {
@@ -2210,6 +2402,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     if (act === "birth") {
       ui.screen = "birth";
       ui.error = "";
+      say("\u884C\u5546\u842C\u91CC\u3002\u96E8\u591C\u958B\u5E02\u3002");
       paint();
       return;
     }
@@ -2223,18 +2416,21 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       const saved = readSave();
       if (!saved) {
         ui.error = "\u672A\u6709\u4E0A\u4E00\u56DE\u884C\u5546";
+        say("\u672A\u6709\u4E0A\u4E00\u56DE\u884C\u5546\u3002");
         paint();
         return;
       }
       state = saved;
       ui.screen = "market";
       ui.error = "";
+      say(`\u8FD4\u5230${cityById(state.cityId).name}\u3002`);
       paint();
       return;
     }
     if (act === "embark") {
       ui.screen = "market";
       writeSave();
+      say(`\u4E0A\u8DEF\u3002\u800C\u5BB6\u55BA${cityById(state.cityId).name}\u3002`);
       paint();
       return;
     }
@@ -2254,6 +2450,10 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       ui.screen = button.dataset.screen;
       ui.scroll = 0;
       paint();
+      if (ui.screen === "night" && state) {
+        const guest = nightBoard(state).current;
+        say(guest ? guest.line : "\u4ECA\u665A\u5187\u5BA2\u4E86\u3002");
+      }
       return;
     }
     if (act === "select") {
@@ -2295,7 +2495,15 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       return;
     }
     if (act === "spend") {
-      commit(spendPoint(state, button.dataset.id));
+      const result = spendPoint(state, button.dataset.id);
+      if (!result.ok) {
+        fail(result.reason);
+        return;
+      }
+      state = result.state;
+      writeSave();
+      say(state.lastMessage);
+      paint(true);
       return;
     }
     if (act === "ask-travel") {
@@ -2313,11 +2521,32 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       return;
     }
     if (act === "night") {
-      commit(nightAct(state, button.dataset.do));
+      const result = nightAct(state, button.dataset.do);
+      if (!result.ok) {
+        fail(result.reason);
+        return;
+      }
+      state = result.state;
+      writeSave();
+      const guest = nightBoard(state).current;
+      if (result.event?.title) {
+        ui.pending = { kind: "event", event: result.event };
+        openGate({
+          title: result.event.title,
+          body: result.event.body,
+          actions: [{ value: "ok", label: "\u77E5\u9053\u4E86", focus: true, primary: true }]
+        });
+      } else {
+        const heard = [state.lastMessage, guest?.line].filter(Boolean).join("\u3002");
+        say(heard);
+      }
+      paint(true);
       return;
     }
     if (act === "close-night") {
-      setState(closeNight(state).state);
+      const result = closeNight(state);
+      setState(result.state);
+      say(result.state.lastMessage);
       return;
     }
     if (act === "craft") {
@@ -2327,6 +2556,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
         return;
       }
       setState(result.state);
+      say(result.state.lastMessage);
     }
   }
   function onSubmit(event) {
@@ -2345,12 +2575,14 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     ui.certBack = false;
     ui.screen = "certificate";
     writeSave();
+    const born = AUSPICES[state.auspice];
+    say(`${state.name}\uFF0C${born.name}\u3002\u7C4D\u8CAB\u6C55\u9999\u57E0\u3002`);
     paint();
   }
   function onChange(event) {
     if (event.target.name === "auspice") ui.auspice = event.target.value;
   }
-  function openGate({ title, body, actions }) {
+  function openGate({ title, body, actions, voice = true }) {
     gateTitle.textContent = title;
     gateBody.textContent = body;
     gateActions.replaceChildren();
@@ -2364,6 +2596,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       gateActions.append(button);
     }
     if (!gate.open) gate.showModal();
+    if (voice) say(`${title}\u3002${body}`);
   }
   function onGateClose() {
     const value = gate.returnValue;
@@ -2373,7 +2606,15 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     if (!pending) return;
     if (pending.kind === "study") {
       if (value !== "go") return;
-      commit(study(state));
+      const result = study(state);
+      if (!result.ok) {
+        fail(result.reason);
+        return;
+      }
+      state = result.state;
+      writeSave();
+      say(state.lastMessage);
+      paint(true);
       return;
     }
     if (pending.kind === "travel") {
@@ -2385,12 +2626,15 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       }
       state = result.state;
       writeSave();
+      if (!result.event) say(`\u5230\u5497${cityById(state.cityId).name}\u3002`);
       if (result.event) {
         ui.pending = { kind: "event", event: result.event };
         const event = result.event;
+        say(`${event.title}\u3002${event.body}`);
         queueMicrotask(() => openGate({
           title: event.title,
           body: event.body,
+          voice: false,
           actions: event.auto ? [{ value: "ok", label: "\u77E5\u9053\u4E86", focus: true, primary: true }] : [
             { value: "no", label: event.no, focus: true },
             { value: "yes", label: event.yes, primary: true }
@@ -2428,6 +2672,9 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
   app.addEventListener("change", onChange);
   gate.addEventListener("close", onGateClose);
   installClosedByFallback();
+  mountVoiceToggle();
+  document.addEventListener("pointerup", () => primeVoice(), { passive: true });
+  document.addEventListener("pagehide", () => stopVoice());
   paint();
 })();
 
