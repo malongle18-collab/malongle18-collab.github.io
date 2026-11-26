@@ -1785,32 +1785,201 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     state2.lastMessage = life.birth.line;
     return { ok: true, state: state2 };
   }
+  var FIRM_FOUND = 480;
+  var FIRM_UPGRADES = [
+    { tier: 2, name: "\u5546\u865F", cost: 860, blurb: "\u53EF\u5F80\u4ED6\u57CE\u958B\u8A2D\u5206\u865F\u3002" },
+    { tier: 3, name: "\u806F\u865F", cost: 1680, blurb: "\u5206\u865F\u4E0D\u518D\u52A0\u6536\u8DEF\u7A0B\u9280\u3002" },
+    { tier: 4, name: "\u901A\u57DF", cost: 2460, blurb: "\u5DF2\u8A2D\u8216\u7684\u5340\u57DF\uFF0C\u8CB7\u8CE3\u53D6\u8A72\u5340\u6700\u512A\u5E02\u50F9\u3002" }
+  ];
+  var FIRM_TIER_NAME = [null, "\u5C0F\u8216", "\u5546\u865F", "\u806F\u865F", "\u901A\u57DF"];
+  function regionsTouch(a, b) {
+    if (a === b) return true;
+    return ROUTES.some((route) => {
+      const left = cityById(route.a).regionId;
+      const right = cityById(route.b).regionId;
+      return left === a && right === b || left === b && right === a;
+    });
+  }
+  function firmUpkeep(firm) {
+    if (!firm) return 0;
+    return 4 * firm.tier + 2 * (1 + firm.branches.length);
+  }
+  function branchFee(state2, cityId) {
+    const firm = state2.firm;
+    if (!firm || firm.tier < 2 || !cityById(cityId)) return null;
+    if (cityId === firm.homeId || firm.branches.includes(cityId)) return null;
+    const home = cityById(firm.homeId).regionId;
+    const dest = cityById(cityId).regionId;
+    let distance = 72;
+    if (firm.tier >= 3 || dest === home) distance = 0;
+    else if (regionsTouch(home, dest)) distance = 36;
+    return 72 + 3 * firm.branches.length + distance;
+  }
+  function foundFirm(state2) {
+    if (state2.dead) return { ok: false, reason: "\u6B64\u751F\u5DF2\u76E1", state: state2 };
+    if (state2.firm) return { ok: false, reason: "\u5DF2\u6709\u5546\u865F", state: state2 };
+    if (state2.silver < FIRM_FOUND) return { ok: false, reason: "\u9280\u5169\u4E0D\u8DB3", state: state2 };
+    const next = clone(state2);
+    next.silver -= FIRM_FOUND;
+    next.firm = { tier: 1, homeId: state2.cityId, branches: [], suspended: false };
+    next.lastMessage = `\u5728${cityById(state2.cityId).name}\u8A2D\u7ACB\u5C0F\u8216\uFF0C\u8017\u8CBB ${FIRM_FOUND} \u5169\u3002`;
+    return { ok: true, state: next };
+  }
+  function upgradeFirm(state2) {
+    if (state2.dead) return { ok: false, reason: "\u6B64\u751F\u5DF2\u76E1", state: state2 };
+    if (!state2.firm) return { ok: false, reason: "\u5C1A\u672A\u8A2D\u7ACB\u5546\u865F", state: state2 };
+    if (state2.firm.suspended) return { ok: false, reason: "\u865F\u898F\u672A\u6E05\uFF0C\u5546\u865F\u66AB\u505C", state: state2 };
+    const step = FIRM_UPGRADES.find((item) => item.tier === state2.firm.tier + 1);
+    if (!step) return { ok: false, reason: "\u5546\u865F\u5DF2\u662F\u901A\u57DF", state: state2 };
+    if (state2.silver < step.cost) return { ok: false, reason: "\u9280\u5169\u4E0D\u8DB3", state: state2 };
+    const next = clone(state2);
+    next.silver -= step.cost;
+    next.firm.tier = step.tier;
+    next.lastMessage = `\u5546\u865F\u5347\u70BA${step.name}\uFF0C\u8017\u8CBB ${step.cost} \u5169\u3002`;
+    return { ok: true, state: next };
+  }
+  function openBranch(state2, cityId) {
+    if (state2.dead) return { ok: false, reason: "\u6B64\u751F\u5DF2\u76E1", state: state2 };
+    if (!cityById(cityId)) return { ok: false, reason: "\u6C92\u6709\u9019\u5EA7\u57CE", state: state2 };
+    if (!state2.firm) return { ok: false, reason: "\u5C1A\u672A\u8A2D\u7ACB\u5546\u865F", state: state2 };
+    if (state2.firm.suspended) return { ok: false, reason: "\u865F\u898F\u672A\u6E05\uFF0C\u5546\u865F\u66AB\u505C", state: state2 };
+    if (state2.firm.tier < 2) return { ok: false, reason: "\u5C0F\u8216\u4E0D\u80FD\u8A2D\u5206\u865F", state: state2 };
+    if (cityId === state2.firm.homeId || state2.firm.branches.includes(cityId)) return { ok: false, reason: "\u9019\u88E1\u5DF2\u6709\u8216\u9762", state: state2 };
+    const fee = branchFee(state2, cityId);
+    if (state2.silver < fee) return { ok: false, reason: "\u9280\u5169\u4E0D\u8DB3", state: state2 };
+    const next = clone(state2);
+    next.silver -= fee;
+    next.firm.branches.push(cityId);
+    next.lastMessage = `\u5728${cityById(cityId).name}\u958B\u8A2D\u5206\u865F\uFF0C\u8017\u8CBB ${fee} \u5169\u3002`;
+    return { ok: true, state: next, fee };
+  }
+  function firmCities(state2, cityId) {
+    const firm = state2.firm;
+    if (!firm || firm.suspended || !cityById(cityId)) return [];
+    const present = [firm.homeId, ...firm.branches];
+    const regionId = cityById(cityId).regionId;
+    if (!present.some((id) => cityById(id).regionId === regionId)) return [];
+    if (!present.includes(cityId) && firm.tier < 4) return [];
+    if (firm.tier >= 4) return CITIES.filter((city2) => city2.regionId === regionId).map((city2) => city2.id);
+    return [cityId];
+  }
+  function firmBoard(state2, cityId, goodId) {
+    const pool = firmCities(state2, cityId);
+    if (!pool.length || !goodById(goodId)) return null;
+    let buyCity = pool[0];
+    let sellCity = pool[0];
+    let ask = Infinity;
+    let bid = -1;
+    for (const id of pool) {
+      const priced = quote({ ...state2, cityId: id }, goodId);
+      if (priced.ask < ask) {
+        ask = priced.ask;
+        buyCity = id;
+      }
+      if (priced.bid > bid) {
+        bid = priced.bid;
+        sellCity = id;
+      }
+    }
+    return {
+      ask,
+      bid,
+      buyCity,
+      sellCity,
+      stock: state2.stock?.[buyCity]?.[goodId] || 0,
+      regional: state2.firm.tier >= 4 && pool.length > 1
+    };
+  }
+  function firmBuy(state2, cityId, goodId, qty = 1) {
+    if (state2.dead) return { ok: false, reason: "\u6B64\u751F\u5DF2\u76E1", state: state2 };
+    const board = firmBoard(state2, cityId, goodId);
+    if (!board) return { ok: false, reason: "\u9019\u88E1\u6C92\u6709\u4F60\u7684\u8216", state: state2 };
+    if (!goodById(goodId) || !Number.isInteger(qty) || qty < 1) return { ok: false, reason: "\u6C92\u6709\u9019\u9805\u8CA8\u7269", state: state2 };
+    if (board.stock < qty) return { ok: false, reason: "\u7F3A\u8CA8", state: state2 };
+    const bill = board.ask * qty;
+    if (state2.silver < bill) return { ok: false, reason: "\u9280\u5169\u4E0D\u8DB3", state: state2 };
+    const weight = goodById(goodId).weight * qty;
+    if (carryUsed(state2) + weight > capacityOf(state2)) return { ok: false, reason: "\u884C\u56CA\u5DF2\u6EFF", state: state2 };
+    const next = clone(state2);
+    const here = next.cityId;
+    next.cityId = board.buyCity;
+    next.silver -= bill;
+    next.stock[board.buyCity][goodId] -= qty;
+    addItem(next, goodId, qty);
+    rememberCost(next, goodId, qty, bill);
+    if (goodId === "hot") next.heat = (next.heat || 0) + qty * 2;
+    next.cityId = here;
+    const where = board.regional ? regionById(cityById(board.buyCity).regionId).name : cityById(board.buyCity).name;
+    next.lastMessage = `\u5206\u865F\u5728${where}\u8CB7\u5165${goodById(goodId).name} ${qty}\uFF0C\u4ED8 ${bill} \u5169\u3002`;
+    return { ok: true, state: next, bill };
+  }
+  function firmSell(state2, cityId, goodId, qty = 1) {
+    if (state2.dead) return { ok: false, reason: "\u6B64\u751F\u5DF2\u76E1", state: state2 };
+    const board = firmBoard(state2, cityId, goodId);
+    if (!board) return { ok: false, reason: "\u9019\u88E1\u6C92\u6709\u4F60\u7684\u8216", state: state2 };
+    if (!goodById(goodId) || !Number.isInteger(qty) || qty < 1) return { ok: false, reason: "\u6C92\u6709\u9019\u9805\u8CA8\u7269", state: state2 };
+    if (have(state2, goodId) < qty) return { ok: false, reason: "\u884C\u56CA\u6C92\u6709\u9019\u9805\u8CA8\u7269", state: state2 };
+    const preview = { ...state2, cityId: board.sellCity };
+    const pay = payout(preview, goodId, qty);
+    const next = clone(state2);
+    next.silver += pay;
+    let left = qty;
+    while (left > 0) {
+      releaseSold(next, goodId);
+      left -= 1;
+    }
+    const here = next.cityId;
+    next.cityId = board.sellCity;
+    const event = recordSale(next, goodId, qty);
+    next.cityId = here;
+    const where = board.regional ? regionById(cityById(board.sellCity).regionId).name : cityById(board.sellCity).name;
+    next.lastMessage = event ? `\u5206\u865F\u5728${where}\u8CE3\u51FA${goodById(goodId).name} ${qty}\uFF0C\u6536 ${pay} \u5169\u3002${event.body}` : `\u5206\u865F\u5728${where}\u8CE3\u51FA${goodById(goodId).name} ${qty}\uFF0C\u6536 ${pay} \u5169\u3002`;
+    return { ok: true, state: next, pay, event };
+  }
+  function settleFirm(next) {
+    const firm = next.firm;
+    if (!firm || next.day <= 1 || next.day % 4 !== 0) return [];
+    const due = firmUpkeep(firm);
+    if (next.silver >= due) {
+      next.silver -= due;
+      firm.suspended = false;
+      return [`\u7E73\u7D0D\u865F\u898F ${due} \u5169\u3002`];
+    }
+    if (firm.branches.length) {
+      const closed = firm.branches.pop();
+      return [`\u865F\u898F ${due} \u5169\u672A\u8DB3\uFF0C\u64A4\u53BB${cityById(closed).name}\u5206\u865F\u3002`];
+    }
+    firm.suspended = true;
+    return ["\u865F\u898F\u672A\u8DB3\uFF0C\u672C\u865F\u66AB\u505C\u9060\u9694\u8CB7\u8CE3\u3002"];
+  }
   function settleObligations(next) {
     const birth = next.birth;
     const notes = [];
-    if (!birth) return notes;
-    if (birth.debt > 0 && next.day >= birth.debtDue) {
-      if (next.silver >= birth.debt) {
-        const paid = birth.debt;
-        next.silver -= paid;
-        birth.debt = 0;
-        notes.push(`\u511F\u9084\u50B5\u52D9 ${paid} \u5169\u3002`);
-      } else {
-        next.rep = Math.max(0, next.rep - 1);
-        birth.debtDue = next.day + 4;
-        notes.push("\u50B5\u52D9\u5230\u671F\u800C\u9280\u5169\u4E0D\u8DB3\uFF0C\u671F\u9650\u5EF6\u5F8C\u56DB\u65E5\uFF0C\u8072\u671B\u4E0B\u964D\u3002");
+    if (birth) {
+      if (birth.debt > 0 && next.day >= birth.debtDue) {
+        if (next.silver >= birth.debt) {
+          const paid = birth.debt;
+          next.silver -= paid;
+          birth.debt = 0;
+          notes.push(`\u511F\u9084\u50B5\u52D9 ${paid} \u5169\u3002`);
+        } else {
+          next.rep = Math.max(0, next.rep - 1);
+          birth.debtDue = next.day + 4;
+          notes.push("\u50B5\u52D9\u5230\u671F\u800C\u9280\u5169\u4E0D\u8DB3\uFF0C\u671F\u9650\u5EF6\u5F8C\u56DB\u65E5\uFF0C\u8072\u671B\u4E0B\u964D\u3002");
+        }
+      }
+      if (birth.rent > 0 && next.day > 1 && next.day % 4 === 0) {
+        if (next.silver >= birth.rent) {
+          next.silver -= birth.rent;
+          notes.push(`\u7E73\u7D0D\u8216\u79DF ${birth.rent} \u5169\u3002`);
+        } else {
+          next.display = [];
+          birth.rent = 0;
+          notes.push("\u8216\u79DF\u672A\u7E73\uFF0C\u9918\u4E0B\u7684\u8216\u9762\u88AB\u6536\u56DE\u3002");
+        }
       }
     }
-    if (birth.rent > 0 && next.day > 1 && next.day % 4 === 0) {
-      if (next.silver >= birth.rent) {
-        next.silver -= birth.rent;
-        notes.push(`\u7E73\u7D0D\u8216\u79DF ${birth.rent} \u5169\u3002`);
-      } else {
-        next.display = [];
-        birth.rent = 0;
-        notes.push("\u8216\u79DF\u672A\u7E73\uFF0C\u9918\u4E0B\u7684\u8216\u9762\u88AB\u6536\u56DE\u3002");
-      }
-    }
+    notes.push(...settleFirm(next));
     return notes;
   }
   var JOBS = [
@@ -3190,6 +3359,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       life: state2.life || null,
       dead: Boolean(state2.dead),
       epitaph: state2.epitaph || "",
+      firm: state2.firm || null,
       points: state2.points || 0,
       deals: state2.deals || 0,
       seenRegions: state2.seenRegions || {},
@@ -3262,6 +3432,18 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     }
     return out;
   }
+  function cleanFirm(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    if (!cityById(raw.homeId)) return null;
+    const tier = Math.max(1, Math.min(4, Math.round(Number(raw.tier) || 1)));
+    const branches = Array.isArray(raw.branches) ? raw.branches.filter((id) => cityById(id) && id !== raw.homeId) : [];
+    return {
+      tier,
+      homeId: raw.homeId,
+      branches: [...new Set(branches)],
+      suspended: Boolean(raw.suspended)
+    };
+  }
   function hiddenLifeFor(raw) {
     if (raw.life && Number.isInteger(raw.life.born) && Number.isInteger(raw.life.span) && raw.life.span > raw.life.born) {
       return {
@@ -3315,6 +3497,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       life: hiddenLifeFor(raw),
       dead: Boolean(raw.dead),
       epitaph: raw.epitaph || "",
+      firm: cleanFirm(raw.firm),
       points: Math.max(0, raw.points || 0),
       deals: Math.max(0, raw.deals || 0),
       seenRegions: { ...raw.seenRegions || {} },
@@ -3362,7 +3545,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     scroll: 0,
     marketView: "all",
     mapRegion: "",
-    replacing: false
+    replacing: false,
+    desk: ""
   };
   var state = null;
   var lastScreen = "";
@@ -3557,7 +3741,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
   }
   function tradeButton(kind, id, qty, label, disabled, reason) {
     const block = disabled ? `aria-disabled="true" data-reason="${esc(reason)}"` : "";
-    return `<button type="button" class="${kind === "buy" ? "buy" : "sell"}" data-act="${kind}" data-id="${id}" data-qty="${qty}" ${block}>${label}</button>`;
+    const buying = kind === "buy" || kind === "firm-buy";
+    return `<button type="button" class="${buying ? "buy" : "sell"}" data-act="${kind}" data-id="${id}" data-qty="${qty}" ${block}>${label}</button>`;
   }
   function renderTicker() {
     const hints = tradeHints(state);
@@ -3585,17 +3770,25 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     }).join("");
     return `<section class="orders" aria-label="\u5546\u884C\u6025\u55AE"><h2 class="section-head">\u5546\u884C\u6025\u55AE</h2><ul class="city-list">${rows}</ul></section>`;
   }
+  function deskPrice(goodId) {
+    if (!ui.desk) return null;
+    return firmBoard(state, ui.desk, goodId);
+  }
   function renderMarket() {
     const held = holdingReport(state);
     const view = ui.marketView === "held" ? "held" : "all";
+    const deskOn = Boolean(ui.desk && firmBoard(state, ui.desk, "rice"));
     const rows = visibleGoods().map((g) => {
-      const q = quote(state, g.id);
+      const board = deskOn ? deskPrice(g.id) : null;
+      const q = board ? { ask: board.ask, bid: board.bid, stock: board.stock } : quote(state, g.id);
       const sig = marketSignal(state, g.id);
       const on = ui.goodId === g.id;
       const buyWhy = blockReason(g, q);
       const owned = state.inventory[g.id] || 0;
       const lot = held.find((item) => item.id === g.id);
-      const room = maxBuy(state, g.id);
+      const room = board ? Math.max(0, Math.min(board.stock, Math.floor(state.silver / board.ask), Math.floor((carry(state).max - carry(state).used) / g.weight))) : maxBuy(state, g.id);
+      const actBuy = deskOn ? "firm-buy" : "buy";
+      const actSell = deskOn ? "firm-sell" : "sell";
       return `<li class="good-row${on ? " is-on" : ""}">
       <button type="button" class="good" data-act="select" data-id="${g.id}" aria-pressed="${on}">
         <img src="${esc(goodArt(g.id))}" alt="" width="321" height="236">
@@ -3603,16 +3796,18 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
         <span class="prices"><span class="ask"><span class="k">\u8CB7</span><b>${q.ask}</b></span><span class="bid"><span class="k">\u8CE3</span><b>${lot ? lot.bid : q.bid}</b></span></span>
       </button>
       ${on ? `<div class="deal">
-        ${tradeButton("buy", g.id, 1, "\u8CB71", Boolean(buyWhy) || room < 1, buyWhy || "\u8CB7\u4E0D\u5230")}
-        ${tradeButton("buy", g.id, 5, "\u8CB75", room < 5, room < 1 ? buyWhy || "\u8CB7\u4E0D\u5230" : "\u8CB7\u4E0D\u5230\u9019\u9EBC\u591A")}
-        ${tradeButton("buy", g.id, "max", "\u8CB7\u6EFF", room < 1, buyWhy || "\u8CB7\u4E0D\u5230")}
-        ${tradeButton("sell", g.id, 1, "\u8CE31", owned < 1, "\u884C\u56CA\u6C92\u6709\u9019\u9805\u8CA8\u7269")}
-        ${tradeButton("sell", g.id, "max", "\u5168\u8CE3", owned < 1, "\u884C\u56CA\u6C92\u6709\u9019\u9805\u8CA8\u7269")}
+        ${tradeButton(actBuy, g.id, 1, "\u8CB71", Boolean(buyWhy) || room < 1, buyWhy || "\u8CB7\u4E0D\u5230")}
+        ${tradeButton(actBuy, g.id, 5, "\u8CB75", room < 5, room < 1 ? buyWhy || "\u8CB7\u4E0D\u5230" : "\u8CB7\u4E0D\u5230\u9019\u9EBC\u591A")}
+        ${tradeButton(actBuy, g.id, "max", "\u8CB7\u6EFF", room < 1, buyWhy || "\u8CB7\u4E0D\u5230")}
+        ${tradeButton(actSell, g.id, 1, "\u8CE31", owned < 1, "\u884C\u56CA\u6C92\u6709\u9019\u9805\u8CA8\u7269")}
+        ${tradeButton(actSell, g.id, "max", "\u5168\u8CE3", owned < 1, "\u884C\u56CA\u6C92\u6709\u9019\u9805\u8CA8\u7269")}
       </div>` : ""}
     </li>`;
     }).join("");
     const summary = held.length ? held.map((lot) => `${lot.name} \xD7${lot.qty}`).join("\u3001") : "\u884C\u56CA\u672A\u6709\u8CA8\u7269";
+    const deskNote = deskOn ? `<p class="empty">${firmBoard(state, ui.desk, "rice").regional ? "\u901A\u57DF\u4EE3\u8FA6" : "\u5206\u865F\u4EE3\u8FA6"} \xB7 ${esc(cityById(ui.desk).name)} <button type="button" class="text-btn" data-act="clear-desk">\u56DE\u5230\u8173\u4E0B\u5E02\u96C6</button></p>` : "";
     const body = `<h1 id="screen-title" class="visually-hidden" tabindex="-1">\u5E02\u96C6</h1>
+    ${deskNote}
     ${state.silver < 15 ? `<p class="empty">\u9280\u5169\u4E0D\u8DB3\u5341\u4E94\u3002\u53EF\u5230\u4EBA\u7269\u9801\u6253\u5DE5\uFF0C\u5148\u8CFA\u4E00\u7B46\u672C\u9322\u3002</p>` : ""}
     ${cornerBrief(state).map((line) => `<p class="empty">${esc(line)}</p>`).join("")}
     ${renderTicker()}
@@ -3658,7 +3853,10 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       const go = city2.plan?.link === "direct" || city2.plan?.link === "gateway";
       return `<li class="city-row">
       <div><span class="city-name">${esc(city2.name)}</span><p class="fare">${esc(linkLabel(city2.plan))}</p><p>${esc(city2.line)}</p></div>
-      ${go ? `<button type="button" class="city-go" data-act="ask-travel" data-id="${city2.id}">\u555F\u7A0B</button>` : `<button type="button" class="city-go" data-act="map-blocked" data-id="${city2.id}" aria-disabled="true" data-reason="${esc(linkLabel(city2.plan))}">${city2.plan?.link === "here" ? "\u73FE\u5728" : "\u672A\u76F4\u901A"}</button>`}
+      <span class="hold-actions">
+        ${go ? `<button type="button" class="city-go" data-act="ask-travel" data-id="${city2.id}">\u555F\u7A0B</button>` : `<button type="button" class="city-go" data-act="map-blocked" data-id="${city2.id}" aria-disabled="true" data-reason="${esc(linkLabel(city2.plan))}">${city2.plan?.link === "here" ? "\u73FE\u5728" : "\u672A\u76F4\u901A"}</button>`}
+        ${firmCityButton(city2.id)}
+      </span>
     </li>`;
     }).join("");
     const body = `<h1 id="screen-title" class="section-head" tabindex="-1">\u5730\u5716 \xB7 ${atlas.length} \u5340 \xB7 ${cityTotal} \u57CE</h1>
@@ -3670,6 +3868,16 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     <ul class="city-list">${direct}</ul>
     <p class="empty day-guide">${esc(DAY_GUIDE)}</p>`;
     return marketFrame("map", streetForWeather(), body);
+  }
+  function firmCityButton(cityId) {
+    const firm = state.firm;
+    if (!firm || firm.suspended) return "";
+    const owned = cityId === firm.homeId || firm.branches.includes(cityId);
+    if (owned) return `<button type="button" class="city-go" data-act="desk" data-id="${cityId}">\u9060\u9694</button>`;
+    if (firm.tier < 2) return "";
+    const fee = branchFee(state, cityId);
+    const afford = state.silver >= fee;
+    return `<button type="button" class="city-go" data-act="open-branch" data-id="${cityId}" ${afford ? "" : 'aria-disabled="true" data-reason="\u9280\u5169\u4E0D\u8DB3"'}>\u5206\u865F ${fee}</button>`;
   }
   function nightButton(label, action, disabled, reason, icon = "", primary = false) {
     const block = disabled ? `aria-disabled="true" data-reason="${esc(reason)}"` : "";
@@ -3802,6 +4010,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       <div><span>\u884C\u56CA</span><strong>${pack.used}/${pack.max}</strong></div>
     </div>
     <p class="empty">\u9032\u5EA6\u5DF2\u81EA\u52D5\u4FDD\u5B58\u65BC\u672C\u6A5F\u3002</p>
+    ${firmBlock()}
     ${goalBlock()}
     ${workBlock()}
     <p class="empty">
@@ -3829,6 +4038,22 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       <button type="button" class="text-btn" data-act="dismiss" ${state.porters || 0 ? "" : 'aria-disabled="true" data-reason="\u6C92\u6709\u8173\u592B"'}>\u89E3\u6563\u8173\u592B</button>
     </p>`;
     return marketFrame("person", streetForWeather(), body, { street: false, short: true });
+  }
+  function firmBlock() {
+    const firm = state.firm;
+    if (!firm) {
+      const afford = state.silver >= FIRM_FOUND;
+      return `<h2 class="section-head">\u5546\u865F</h2>
+      <p class="empty">\u5728\u8173\u4E0B\u9019\u57CE\u8A2D\u7ACB\u5C0F\u8216\uFF0C\u8017\u8CBB ${FIRM_FOUND} \u5169\u3002\u4E4B\u5F8C\u53EF\u9060\u9694\u8CB7\u8CE3\uFF0C\u4E0D\u5FC5\u89AA\u81EA\u7AD9\u5728\u6AC3\u524D\u3002</p>
+      <p class="empty"><button type="button" class="craft-go" data-act="found-firm" ${afford ? "" : 'aria-disabled="true" data-reason="\u9280\u5169\u4E0D\u8DB3"'}>\u8A2D\u7ACB\u5C0F\u8216</button></p>`;
+    }
+    const step = FIRM_UPGRADES.find((item) => item.tier === firm.tier + 1);
+    const names = [cityById(firm.homeId).name, ...firm.branches.map((id) => cityById(id).name)];
+    return `<h2 class="section-head">\u5546\u865F \xB7 ${esc(FIRM_TIER_NAME[firm.tier])}</h2>
+    <p class="empty">\u672C\u865F\u5728${esc(cityById(firm.homeId).name)}\u3002\u8216\u9762 ${names.length}\u3002\u6BCF\u56DB\u65E5\u865F\u898F ${firmUpkeep(firm)} \u5169\u3002${firm.suspended ? "\u865F\u898F\u672A\u6E05\uFF0C\u9060\u9694\u66AB\u505C\u3002" : ""}</p>
+    <p class="empty">${esc(names.join("\u3001"))}</p>
+    ${step ? `<p class="empty">${esc(step.blurb)} \u5347\u7D1A ${step.cost} \u5169\u3002</p>
+      <p class="empty"><button type="button" class="craft-go" data-act="upgrade-firm" ${state.silver >= step.cost && !firm.suspended ? "" : `aria-disabled="true" data-reason="${firm.suspended ? "\u865F\u898F\u672A\u6E05\uFF0C\u5546\u865F\u66AB\u505C" : "\u9280\u5169\u4E0D\u8DB3"}"`}>\u5347\u70BA${esc(step.name)}</button></p>` : `<p class="empty">\u5DF2\u662F\u901A\u57DF\u3002\u8A2D\u6709\u8216\u9762\u7684\u5340\u57DF\uFF0C\u53D6\u6700\u512A\u5E02\u50F9\u3002</p>`}`;
   }
   function goalBlock() {
     const active = cornerBrief(state);
@@ -4092,6 +4317,56 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       ui.goodId = button.dataset.id;
       sfxTap();
       paint();
+      return;
+    }
+    if (act === "found-firm" || act === "upgrade-firm" || act === "open-branch") {
+      const result = act === "found-firm" ? foundFirm(state) : act === "upgrade-firm" ? upgradeFirm(state) : openBranch(state, button.dataset.id);
+      if (!result.ok) {
+        fail(result.reason);
+        return;
+      }
+      sfxCoin();
+      setState(result.state);
+      return;
+    }
+    if (act === "desk") {
+      ui.desk = button.dataset.id;
+      ui.screen = "market";
+      sfxTab();
+      paint();
+      return;
+    }
+    if (act === "clear-desk") {
+      ui.desk = "";
+      sfxTap();
+      paint();
+      return;
+    }
+    if (act === "firm-buy" || act === "firm-sell") {
+      const id = button.dataset.id;
+      const board = firmBoard(state, ui.desk, id);
+      if (!board) {
+        fail("\u9019\u88E1\u6C92\u6709\u4F60\u7684\u8216");
+        return;
+      }
+      const owned = state.inventory[id] || 0;
+      const room = Math.max(0, Math.min(
+        board.stock,
+        Math.floor(state.silver / Math.max(1, board.ask)),
+        Math.floor((carry(state).max - carry(state).used) / goodById(id).weight)
+      ));
+      const qty = button.dataset.qty === "max" ? act === "firm-buy" ? room : owned : Number(button.dataset.qty || 1);
+      if (!Number.isInteger(qty) || qty < 1) {
+        fail(act === "firm-buy" ? "\u8CB7\u4E0D\u5230" : "\u884C\u56CA\u6C92\u6709\u9019\u9805\u8CA8\u7269");
+        return;
+      }
+      const result = (act === "firm-buy" ? firmBuy : firmSell)(state, ui.desk, id, qty);
+      if (!result.ok) {
+        fail(result.reason);
+        return;
+      }
+      sfxCoin();
+      commit(result);
       return;
     }
     if (act === "buy" || act === "sell") {
