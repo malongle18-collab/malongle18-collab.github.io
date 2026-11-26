@@ -3214,7 +3214,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     pending: null,
     scroll: 0,
     marketView: "all",
-    mapRegion: ""
+    mapRegion: "",
+    replacing: false
   };
   var state = null;
   var lastScreen = "";
@@ -3308,14 +3309,18 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     return "";
   }
   function renderTitle() {
+    const saved = readSave();
+    const primary = saved ? `<button type="button" class="birth-btn" data-act="continue">\u4E0A\u4E00\u56DE\u884C\u5546</button>` : `<button type="button" class="birth-btn" data-act="birth">\u51FA\u751F</button>`;
+    const secondary = saved ? `<button type="button" class="text-btn" data-act="birth">\u51FA\u751F</button>` : "";
     return `<section class="screen title-screen">
     ${scene(ART.title, "", true)}
     ${rainLayer(true)}
     ${signs("title")}
     <div class="cluster">
       <h1 id="screen-title" class="game-title" tabindex="-1">\u884C\u5546\u842C\u91CC</h1>
-      <button type="button" class="birth-btn" data-act="birth">\u51FA\u751F</button>
-      <button type="button" class="text-btn" data-act="continue">\u4E0A\u4E00\u56DE\u884C\u5546</button>
+      ${saved ? `<p class="hint">\u672C\u6A5F\u5DF2\u6709${esc(saved.name)}\u7684\u884C\u5546\u8A18\u9304\u3002</p>` : ""}
+      ${primary}
+      ${secondary}
       ${ui.error ? `<p class="form-error">${esc(ui.error)}</p>` : ""}
     </div>
   </section>`;
@@ -3804,6 +3809,17 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     writeSave();
     paint(true);
   }
+  function askNewGame() {
+    ui.pending = { kind: "new-game" };
+    openGate({
+      title: "\u958B\u65B0\u6A94",
+      body: "\u78BA\u5B9A\u958B\u65B0\u6A94\uFF1F\u5B8C\u6210\u65B0\u7684\u51FA\u751F\u767B\u8A18\u5F8C\uFF0C\u76EE\u524D\u9032\u5EA6\u6703\u88AB\u53D6\u4EE3\u3002\u82E5\u73FE\u5728\u8FD4\u56DE\uFF0C\u539F\u6709\u8A18\u9304\u4ECD\u7136\u4FDD\u7559\u3002",
+      actions: [
+        { value: "stay", label: "\u53D6\u6D88" },
+        { value: "go", label: "\u958B\u65B0\u6A94", primary: true }
+      ]
+    });
+  }
   function onClick(event) {
     const button = event.target.closest("[data-act]");
     if (!button || !app.contains(button)) return;
@@ -3815,6 +3831,11 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     if (sheet) ui.scroll = sheet.scrollTop;
     const act = button.dataset.act;
     if (act === "birth") {
+      if (readSave()) {
+        askNewGame();
+        return;
+      }
+      ui.replacing = true;
       ui.screen = "birth";
       ui.error = "";
       sfxTap();
@@ -3822,18 +3843,11 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       return;
     }
     if (act === "ask-new") {
-      ui.pending = { kind: "new-game" };
-      openGate({
-        title: "\u958B\u65B0\u6A94",
-        body: "\u78BA\u5B9A\u958B\u65B0\u6A94\uFF1F\u5B8C\u6210\u65B0\u7684\u51FA\u751F\u767B\u8A18\u5F8C\uFF0C\u76EE\u524D\u9032\u5EA6\u6703\u88AB\u53D6\u4EE3\u3002\u82E5\u73FE\u5728\u8FD4\u56DE\uFF0C\u539F\u6709\u8A18\u9304\u4ECD\u7136\u4FDD\u7559\u3002",
-        actions: [
-          { value: "stay", label: "\u53D6\u6D88" },
-          { value: "go", label: "\u958B\u65B0\u6A94", primary: true }
-        ]
-      });
+      askNewGame();
       return;
     }
     if (act === "back-title") {
+      ui.replacing = false;
       ui.screen = "title";
       ui.error = "";
       sfxTap();
@@ -4041,12 +4055,18 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     if (form.id !== "birth-form") return;
     event.preventDefault();
     const data = new FormData(form);
+    if (readSave() && !ui.replacing) {
+      ui.error = "\u5DF2\u6709\u884C\u5546\u8A18\u9304\u3002\u8ACB\u5148\u78BA\u8A8D\u958B\u65B0\u6A94\u3002";
+      paint();
+      return;
+    }
     const made = createNew(data.get("name"));
     if (!made.ok) {
       ui.error = made.reason;
       paint();
       return;
     }
+    ui.replacing = false;
     state = made.state;
     ui.error = "";
     ui.certBack = false;
@@ -4089,7 +4109,11 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     ui.pending = null;
     if (!pending) return;
     if (pending.kind === "new-game") {
-      if (value !== "go") return;
+      if (value !== "go") {
+        ui.replacing = false;
+        return;
+      }
+      ui.replacing = true;
       ui.screen = "birth";
       ui.error = "";
       sfxTap();
@@ -4168,6 +4192,12 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     else resumeAudio();
   });
   document.addEventListener("pagehide", () => suspendAudio());
+  var savedOnBoot = readSave();
+  if (savedOnBoot) {
+    state = savedOnBoot;
+    ui.screen = "market";
+    ui.error = "";
+  }
   paint();
 })();
 
