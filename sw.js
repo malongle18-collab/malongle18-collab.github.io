@@ -93,6 +93,8 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
+  // 《行商萬里》 is a separate page. Leave /hangshang-wanli/ to the network.
+  if (url.pathname === "/hangshang-wanli" || url.pathname.startsWith("/hangshang-wanli/")) return;
   const dest = req.destination;
   const networkFirst =
     dest === "document" ||
