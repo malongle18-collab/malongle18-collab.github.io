@@ -287,7 +287,78 @@ h1, h2 { font-family: var(--serif); font-weight: 600; text-wrap: balance; margin
   font-size: 0.92rem;
 }
 
-.good-list, .city-list, .bag-list, .craft-list, .shelf { list-style: none; margin: 0; padding: 0; }
+.good-list, .city-list, .bag-list, .craft-list, .shelf, .hold-list { list-style: none; margin: 0; padding: 0; }
+
+.hold { padding: 0.75rem 0.85rem 0.35rem; border-bottom: 1px solid var(--line); }
+
+.hold-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; }
+
+.hold-head h2, .cabinet h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  font-weight: 550;
+  letter-spacing: 0.08em;
+}
+
+.hold-head h2 span, .shelf em { color: var(--cyan); font-style: normal; }
+
+.seg { display: flex; gap: 0.35rem; }
+
+.seg button, .chip {
+  min-block-size: 2.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.35rem 0.8rem;
+}
+
+.seg button[aria-pressed="true"], .chip.is-on, .chip[aria-pressed="true"] {
+  color: #102027;
+  background: var(--cyan);
+  border-color: var(--cyan);
+}
+
+.hold-summary { margin: 0.45rem 0 0.15rem; color: var(--muted); font-size: 0.86rem; }
+
+.hold-row {
+  display: grid;
+  grid-template-columns: 3.2rem minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.hold-row img { width: 3.2rem; height: 2.4rem; object-fit: cover; border-radius: 0.4rem; }
+
+.hold-row .good-name em { font-style: normal; color: var(--gold); }
+
+.hold-row .sell { min-block-size: 2.75rem; }
+
+.stock .up { color: var(--ask); }
+.stock .down { color: var(--bid); }
+
+.cabinet { padding: 0.15rem 0.85rem 0.35rem; }
+
+.chip-row {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+  margin-top: 0.35rem;
+}
+
+.chip { flex: 0 0 auto; }
+
+.night-copy.is-long {
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  line-height: 1.45;
+}
+
+.shelf em { display: block; font-size: 0.75rem; margin-top: 0.1rem; }
 
 .good-row { border-bottom: 1px solid var(--line); }
 
@@ -350,7 +421,7 @@ h1, h2 { font-family: var(--serif); font-weight: 600; text-wrap: balance; margin
   padding: 0 0.85rem 0.7rem;
 }
 
-.deal button, .bargain button, .city-go, .craft-go, .primary, .ghost {
+.deal button, .bargain button, .city-go, .craft-go, .primary, .ghost, .hold-row .sell {
   border: 0;
   color: #f6fffb;
   padding-inline: 0.9rem;
@@ -525,13 +596,14 @@ legend { color: var(--gold); padding: 0; }
 }
 
 .shelf {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
   gap: 0.45rem;
-  padding: 0 0.75rem;
+  padding: 0 0.75rem 0.8rem;
+  overflow-x: auto;
 }
 
 .shelf li {
+  flex: 0 0 6.4rem;
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: 0.7rem;
@@ -541,7 +613,7 @@ legend { color: var(--gold); padding: 0; }
 
 .shelf li.is-on { border-color: rgb(103 233 255 / 0.7); box-shadow: 0 0 0 1px rgb(103 233 255 / 0.25); }
 
-.shelf img { width: 100%; height: 4.2rem; }
+.shelf img { width: 100%; height: 3.2rem; object-fit: cover; }
 
 .shelf span { display: block; margin-top: 0.25rem; font-size: 0.82rem; }
 .shelf b { font-weight: 550; font-variant-numeric: tabular-nums; color: var(--gold); }
@@ -566,15 +638,13 @@ legend { color: var(--gold); padding: 0; }
 
 .bargain-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.45rem;
   margin-top: 0.85rem;
-  position: sticky;
-  bottom: 0;
-  padding-block: 0.45rem 0.35rem;
-  background: var(--panel);
+  padding-block: 0.35rem 0.15rem;
 }
 
-.bargain-actions button { flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; gap: 0.3rem; }
+.bargain-actions button { flex: 1 1 5.5rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.3rem; }
 
 .bargain-actions svg { width: 1rem; height: 1rem; }
 
@@ -1371,6 +1441,12 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       tool: null,
       porters: 0,
       nightIndex: 0,
+      nightNote: {},
+      basis: {},
+      basisQty: {},
+      worn: {},
+      fine: {},
+      display: [],
       points: 0,
       deals: 0,
       seenRegions: {},
@@ -1522,8 +1598,14 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
   }
   function addItem(state2, id, qty) {
     const next = have(state2, id) + qty;
-    if (next <= 0) delete state2.inventory[id];
-    else state2.inventory[id] = next;
+    if (next <= 0) {
+      delete state2.inventory[id];
+      if (state2.basis) delete state2.basis[id];
+      if (state2.basisQty) delete state2.basisQty[id];
+      if (state2.worn) delete state2.worn[id];
+      if (state2.fine) delete state2.fine[id];
+      if (Array.isArray(state2.display)) state2.display = state2.display.filter((item) => item !== id);
+    } else state2.inventory[id] = next;
   }
   function ensureMaps(state2) {
     state2.sold ||= {};
@@ -1532,6 +1614,62 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     state2.effects ||= [];
     state2.porters ||= 0;
     state2.tool ||= null;
+    state2.basis ||= {};
+    state2.basisQty ||= {};
+    state2.worn ||= {};
+    state2.fine ||= {};
+    state2.display ||= [];
+    state2.nightNote ||= {};
+  }
+  function rememberCost(state2, id, qty, paid) {
+    ensureMaps(state2);
+    state2.basis[id] = (state2.basis[id] || 0) + paid;
+    state2.basisQty[id] = (state2.basisQty[id] || 0) + qty;
+  }
+  function forgetCost(state2, id, qty) {
+    const known = state2.basisQty?.[id] || 0;
+    if (!known || qty < 1) return;
+    const drop = Math.min(known, qty);
+    const left = known - drop;
+    if (left <= 0) {
+      delete state2.basis[id];
+      delete state2.basisQty[id];
+      return;
+    }
+    state2.basis[id] = Math.round((state2.basis[id] || 0) * left / known);
+    state2.basisQty[id] = left;
+  }
+  function releaseSold(state2, id) {
+    ensureMaps(state2);
+    const worn = state2.worn[id] || 0;
+    const fine = state2.fine[id] || 0;
+    const plain = have(state2, id) - worn - fine;
+    if (plain <= 0 && worn > 0) {
+      state2.worn[id] = worn - 1;
+      if (state2.worn[id] <= 0) delete state2.worn[id];
+    } else if (plain <= 0 && fine > 0) {
+      state2.fine[id] = fine - 1;
+      if (state2.fine[id] <= 0) delete state2.fine[id];
+    }
+    forgetCost(state2, id, 1);
+    addItem(state2, id, -1);
+  }
+  function payout(state2, goodId, qty) {
+    const bid = quote(state2, goodId).bid;
+    let worn = state2.worn?.[goodId] || 0;
+    let fine = state2.fine?.[goodId] || 0;
+    let pay = 0;
+    for (let i = 0; i < qty; i += 1) {
+      if (worn > 0) {
+        pay += Math.max(1, Math.round(bid * 0.7));
+        worn -= 1;
+      } else if (fine > 0) {
+        pay += Math.max(bid + 1, Math.round(bid * 1.12));
+        fine -= 1;
+      } else pay += bid;
+    }
+    const craftBonus = INTRODUCED_BY_SALE.includes(goodId) ? Math.max(0, (state2.attrs?.craft ?? 1) - 1) * qty : 0;
+    return pay + craftBonus;
   }
   var KIN = {
     salt: ["seasalt"],
@@ -1668,6 +1806,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     next.silver -= bill;
     next.stock[next.cityId][goodId] -= qty;
     addItem(next, goodId, qty);
+    rememberCost(next, goodId, qty, bill);
     next.lastMessage = `\u8CB7\u5165${goodById(goodId).name} ${qty}\uFF0C\u4ED8 ${bill} \u5169\u3002`;
     return { ok: true, state: next, bill };
   }
@@ -1676,12 +1815,14 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       return { ok: false, reason: "\u5187\u5462\u6A23\u8CA8", state: state2 };
     }
     if (have(state2, goodId) < qty) return { ok: false, reason: "\u884C\u56CA\u5187\u5462\u6A23", state: state2 };
-    const q = quote(state2, goodId);
-    const craftBonus = INTRODUCED_BY_SALE.includes(goodId) ? Math.max(0, (state2.attrs?.craft ?? 1) - 1) * qty : 0;
-    const pay = q.bid * qty + craftBonus;
+    const pay = payout(state2, goodId, qty);
     const next = clone(state2);
     next.silver += pay;
-    addItem(next, goodId, -qty);
+    let left = qty;
+    while (left > 0) {
+      releaseSold(next, goodId);
+      left -= 1;
+    }
     const event = recordSale(next, goodId, qty);
     next.lastMessage = event ? `\u8CE3\u51FA${goodById(goodId).name} ${qty}\uFF0C\u6536 ${pay} \u5169\u3002${event.body}` : `\u8CE3\u51FA${goodById(goodId).name} ${qty}\uFF0C\u6536 ${pay} \u5169\u3002`;
     return { ok: true, state: next, pay, event };
@@ -1763,6 +1904,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     grantRegionPoint(next);
     next.day += cost.days;
     next.nightIndex = 0;
+    next.nightNote = {};
     next.effects = liveEffects(next);
     next = applyRestock(next);
     const event = makeEvent(next, fromId, destId);
@@ -1818,8 +1960,25 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       return { ok: false, reason: missing ? "\u6750\u6599\u5514\u5920" : "\u884C\u56CA\u5DF2\u6EFF", state: state2 };
     }
     const next = clone(state2);
-    for (const [id, qty] of Object.entries(recipe.need)) addItem(next, id, -qty);
-    for (const [id, qty] of Object.entries(recipe.out)) addItem(next, id, qty);
+    ensureMaps(next);
+    let paid = 0;
+    let known = true;
+    for (const [id, qty] of Object.entries(recipe.need)) {
+      const tracked = next.basisQty[id] || 0;
+      if (tracked < qty) known = false;
+      else if (known) paid += Math.round((next.basis[id] || 0) * qty / tracked);
+    }
+    for (const [id, qty] of Object.entries(recipe.need)) {
+      let left = qty;
+      while (left > 0) {
+        releaseSold(next, id);
+        left -= 1;
+      }
+    }
+    for (const [id, qty] of Object.entries(recipe.out)) {
+      addItem(next, id, qty);
+      if (known) rememberCost(next, id, qty, paid);
+    }
     next.lastMessage = `\u505A\u6210${recipe.name}\u3002\u672A\u8CE3\u51FA\u4E4B\u524D\uFF0C\u5514\u6703\u5165\u672C\u5730\u5E02\u3002`;
     return { ok: true, state: next };
   }
@@ -1884,6 +2043,110 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     const talk = 1 + Math.max(0, (state2.attrs?.talk ?? 1) - 1) * 0.03;
     return Math.max(bid + 1, Math.round(bid * 1.45 * boost * talk));
   }
+  var PAWN_CONDITIONS = ["sound", "sound", "sound", "worn", "worn", "worn", "fine", "fake", "fake", "sound"];
+  function buyerGuest(state2, index, goodId, showcase) {
+    const baseOffer = nightOffer(state2, goodId);
+    const onDisplay = (state2.display || []).includes(goodId);
+    const premium = showcase || onDisplay;
+    const offer = premium ? Math.max(baseOffer + 2, Math.round(baseOffer * 1.22)) : baseOffer;
+    let line = nightLine(goodId);
+    if (showcase) line = `\u898B\u5C55\u6AC3\u6709${goodById(goodId).name}\uFF0C\u80AF\u51FA\u9AD8\u50F9\u3002`;
+    else if (onDisplay) line = `${nightLine(goodId)}\u898B\u5C55\u6AC3\u6709\uFF0C\u60F3\u51FA\u9AD8\u50F9\u3002`;
+    return {
+      kind: "buyer",
+      index,
+      goodId,
+      name: goodById(goodId).name,
+      line,
+      offer,
+      baseOffer,
+      showcase: Boolean(showcase),
+      role: showcase ? "\u5C55\u6AC3" : "\u8CB7\u8CA8"
+    };
+  }
+  function pawnGood(state2) {
+    if (hash(state2.day, state2.cityId, "hotpawn") % 7 === 0) return "hot";
+    const here = cityById(state2.cityId).regionId;
+    const regions = REGIONS.filter((region2) => region2.id !== here);
+    const region = regions[hash(state2.day, state2.cityId, "preg") % regions.length];
+    return region.cheap[hash(state2.day, state2.cityId, "pg") % region.cheap.length];
+  }
+  function makePawn(state2, index) {
+    const goodId = pawnGood(state2);
+    const condition = PAWN_CONDITIONS[hash(state2.day, state2.cityId, "cond") % PAWN_CONDITIONS.length];
+    const market = quote(state2, goodId).ask;
+    const ratio = { fake: 0.92, fine: 0.8, worn: 0.62, sound: 0.74 }[condition];
+    const note = state2.nightNote?.[index] || {};
+    const ask = note.ask || Math.max(2, Math.round(market * ratio));
+    const good = goodById(goodId);
+    return {
+      kind: "pawn",
+      index,
+      goodId,
+      name: good.name,
+      line: `\u5E36\u5497${good.name}\u569F\u7576\uFF0C\u958B\u50F9 ${ask} \u5169\u3002`,
+      ask,
+      offer: ask,
+      condition,
+      checked: Boolean(note.appraised),
+      revealed: Boolean(note.appraised && note.sharp),
+      haggled: Boolean(note.haggled),
+      role: "\u5178\u7576"
+    };
+  }
+  function makeSpecial(state2, index) {
+    const kind = ["tip", "smith", "fence"][hash(state2.day, state2.cityId, "special") % 3];
+    if (kind === "tip") {
+      const city2 = CITIES[hash(state2.day, state2.cityId, "tipcity") % CITIES.length];
+      const goodId = regionById(city2.regionId).cheap[0];
+      const ask = 6 + hash(state2.day, state2.cityId, "tipfee") % 6;
+      const days = 1 + hash(state2.day, "tipdays") % 2;
+      const name = goodById(goodId).name;
+      return {
+        kind,
+        index,
+        role: "\u98A8\u8072",
+        goodId,
+        name,
+        cityId: city2.id,
+        cityName: city2.name,
+        days,
+        line: `${city2.name}\u8FD1${days === 1 ? "\u4E00\u5169" : "\u5169"}\u65E5\u6436${name}\u3002\u6211\u53EF\u4EE5\u8CE3\u4F60\u5462\u55AE\u98A8\u8072\u3002`,
+        ask,
+        offer: ask
+      };
+    }
+    if (kind === "smith") {
+      const wornId = Object.keys(state2.worn || {}).find((id) => (state2.worn[id] || 0) > 0 && (state2.inventory?.[id] || 0) > 0);
+      const held = GOODS.find((good) => (state2.inventory?.[good.id] || 0) > 0);
+      const goodId = wornId || held?.id || "cloth";
+      const ask = 4 + hash(state2.day, state2.cityId, "smith") % 4;
+      const name = goodById(goodId).name;
+      return {
+        kind,
+        index,
+        role: "\u4FEE\u88DC",
+        goodId,
+        name,
+        worn: Boolean(wornId),
+        line: wornId ? `\u5462\u4EF6${name}\u6211\u53EF\u4EE5\u6574\u7FFB\u65B0\u3002` : `\u6211\u53EF\u4EE5\u5E6B\u4F60\u6574\u4EAE\u4E00\u4EF6${name}\uFF0C\u6536\u8CBB\u5E73\u3002`,
+        ask,
+        offer: ask
+      };
+    }
+    const bid = quote(state2, "hot").bid;
+    const offer = Math.max(bid + 4, Math.round(bid * 1.55));
+    return {
+      kind: "fence",
+      index,
+      role: "\u6697\u8DEF",
+      goodId: "hot",
+      name: "\u71D9\u624B\u8CA8",
+      line: "\u71D9\u624B\u8CA8\u6211\u6536\uFF0C\u4E0D\u904E\u8857\u982D\u6709\u773C\u3002",
+      offer,
+      ask: offer
+    };
+  }
   function customers(state2) {
     const traffic = trafficOf(state2);
     const count = { dan: 1, ping: 2, wang: 3 }[traffic.id];
@@ -1893,59 +2156,228 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       let goodId = pool[hash(state2.day, state2.cityId, i, "cust") % pool.length];
       if (state2.day === 1 && state2.cityId === "shan" && i === 0) goodId = "meal";
       if (state2.day === 1 && state2.cityId === "shan" && i === 1) goodId = "rice";
-      list.push({
-        index: i,
-        goodId,
-        name: goodById(goodId).name,
-        line: nightLine(goodId),
-        offer: nightOffer(state2, goodId)
-      });
+      list.push(buyerGuest(state2, i, goodId, false));
+    }
+    list.push(makePawn(state2, list.length));
+    list.push(makeSpecial(state2, list.length));
+    const display = (state2.display || []).filter((id) => (state2.inventory?.[id] || 0) > 0 && goodById(id));
+    if (display.length) {
+      const goodId = display[hash(state2.day, state2.cityId, "case") % display.length];
+      list.push(buyerGuest(state2, list.length, goodId, true));
     }
     return list;
+  }
+  function holdingReport(state2) {
+    const region = regionById(cityById(state2.cityId).regionId);
+    const rows = [];
+    for (const good of GOODS) {
+      const qty = state2.inventory?.[good.id] || 0;
+      if (qty < 1) continue;
+      const knownQty = Math.min(qty, state2.basisQty?.[good.id] || 0);
+      const avg = knownQty > 0 ? Math.round((state2.basis?.[good.id] || 0) / knownQty) : null;
+      const bid = payout(state2, good.id, 1);
+      rows.push({
+        id: good.id,
+        name: good.name,
+        qty,
+        bid,
+        avg,
+        known: knownQty > 0,
+        knownQty,
+        profit: avg == null ? null : bid - avg,
+        local: region.cheap.includes(good.id),
+        crafted: Boolean(good.crafted),
+        worn: state2.worn?.[good.id] || 0,
+        fine: state2.fine?.[good.id] || 0,
+        stock: quote(state2, good.id).stock
+      });
+    }
+    return rows;
+  }
+  var DISPLAY_MAX = 3;
+  function toggleDisplay(state2, goodId) {
+    if (!goodById(goodId)) return { ok: false, reason: "\u5187\u5462\u6A23\u8CA8", state: state2 };
+    if ((state2.inventory?.[goodId] || 0) < 1) return { ok: false, reason: "\u884C\u56CA\u5187\u5462\u6A23", state: state2 };
+    const next = clone(state2);
+    ensureMaps(next);
+    if (next.display.includes(goodId)) {
+      next.display = next.display.filter((id) => id !== goodId);
+      next.lastMessage = `\u6536\u8D77${goodById(goodId).name}\u3002`;
+      return { ok: true, state: next };
+    }
+    if (next.display.length >= DISPLAY_MAX) return { ok: false, reason: "\u5C55\u6AC3\u53EA\u64FA\u4E09\u6A23", state: state2 };
+    next.display = [...next.display, goodId];
+    next.lastMessage = `${goodById(goodId).name}\u64FA\u4E0A\u5C55\u6AC3\u3002`;
+    return { ok: true, state: next };
   }
   function nightBoard(state2) {
     const all = customers(state2);
     const current = all[state2.nightIndex] ?? null;
     return { traffic: trafficOf(state2), customers: all, current, done: state2.nightIndex >= all.length };
   }
+  function passGuest(state2, message) {
+    const next = clone(state2);
+    ensureMaps(next);
+    next.nightIndex += 1;
+    next.lastMessage = message;
+    return { ok: true, state: next, cue: "tap" };
+  }
+  function actBuyer(state2, cust, action) {
+    if (action === "pass") return passGuest(state2, "\u4F60\u5187\u4E0A\u67B6\u3002");
+    if (have(state2, cust.goodId) < 1) return { ok: false, reason: "\u884C\u56CA\u5187\u5462\u6A23", state: state2 };
+    if (action !== "deal" && action !== "haggle") return { ok: false, reason: "\u5187\u5462\u4E00\u6B65", state: state2 };
+    const accept = action === "deal" || hash(state2.day, state2.cityId, cust.index, "haggle") % 5 < 3;
+    const next = clone(state2);
+    ensureMaps(next);
+    next.nightIndex += 1;
+    if (!accept) {
+      next.lastMessage = "\u4F62\u6416\u982D\u8D70\u5497\u3002";
+      return { ok: true, state: next, accepted: false, cue: "error" };
+    }
+    const price = action === "deal" ? cust.offer : Math.round(cust.offer * 1.16);
+    releaseSold(next, cust.goodId);
+    next.silver += price;
+    next.rep += action === "deal" ? 1 : 2;
+    next.deals = (next.deals || 0) + 1;
+    if (next.deals % 4 === 0) next.points = (next.points || 0) + 1;
+    const event = recordSale(next, cust.goodId, 1);
+    next.lastMessage = action === "deal" ? `\u6210\u4EA4${cust.name}\uFF0C\u6536 ${price} \u5169\u3002` : `\u9084\u50F9\u6210\u529F\uFF0C\u6536 ${price} \u5169\u3002`;
+    if (event) next.lastMessage += event.body;
+    return { ok: true, state: next, accepted: true, price, event, cue: "deal" };
+  }
+  function actPawn(state2, cust, action) {
+    if (action === "pass") return passGuest(state2, "\u4F60\u8B1D\u7D55\u5497\u5462\u55AE\u7576\u8CA8\u3002");
+    const note = state2.nightNote?.[cust.index] || {};
+    if (action === "appraise") {
+      const eye = state2.attrs?.eye ?? 1;
+      const sharp = eye >= 5 || hash(state2.day, state2.cityId, cust.index, "see") % 6 < eye;
+      const next = clone(state2);
+      ensureMaps(next);
+      next.nightNote[cust.index] = { ...note, appraised: true, sharp };
+      const label = { fake: "\u5047\u8CA8", worn: "\u820A\u8CA8", fine: "\u4E0A\u4F73", sound: "\u5E73\u8CA8" }[cust.condition];
+      next.lastMessage = sharp ? `\u6210\u8272\u4FC2${label}\u3002` : "\u4F60\u7747\u5514\u900F\u6210\u8272\u3002";
+      return { ok: true, state: next, cue: "event" };
+    }
+    if (action === "haggle") {
+      if (note.haggled) return { ok: false, reason: "\u5DF2\u7D93\u9084\u904E\u50F9", state: state2 };
+      const talk = state2.attrs?.talk ?? 1;
+      const walk = hash(state2.day, state2.cityId, cust.index, "walk") % 10 < Math.max(1, 5 - Math.min(4, talk - 1));
+      const next = clone(state2);
+      ensureMaps(next);
+      if (walk) {
+        next.nightIndex += 1;
+        next.lastMessage = "\u4F62\u6536\u8D77\u8CA8\u8D70\u5497\u3002";
+        return { ok: true, state: next, walked: true, cue: "error" };
+      }
+      const cut = Math.max(1, Math.round(cust.ask * (0.06 + Math.min(4, talk) * 0.02)));
+      const ask = Math.max(1, cust.ask - cut);
+      next.nightNote[cust.index] = { ...note, haggled: true, ask };
+      next.lastMessage = `\u9084\u5230 ${ask} \u5169\u3002`;
+      return { ok: true, state: next, cue: "deal" };
+    }
+    if (action === "buy") {
+      const sharp = Boolean(note.appraised && note.sharp);
+      if (sharp && cust.condition === "fake") return { ok: false, reason: "\u4FC2\u5047\u8CA8", state: state2 };
+      const price = note.ask || cust.ask;
+      if (state2.silver < price) return { ok: false, reason: "\u9280\u5169\u5514\u5920", state: state2 };
+      const next = clone(state2);
+      ensureMaps(next);
+      if (!sharp && cust.condition === "fake") {
+        next.silver -= price;
+        next.nightIndex += 1;
+        next.lastMessage = `\u4ED8\u5497 ${price} \u5169\uFF0C\u539F\u4F86\u4FC2\u5047\u8CA8\u3002`;
+        return { ok: true, state: next, swindled: true, cue: "error" };
+      }
+      const weight = goodById(cust.goodId).weight;
+      if (carryUsed(state2) + weight > capacityOf(state2)) return { ok: false, reason: "\u884C\u56CA\u5DF2\u6EFF", state: state2 };
+      next.silver -= price;
+      addItem(next, cust.goodId, 1);
+      rememberCost(next, cust.goodId, 1, price);
+      if (cust.condition === "worn") next.worn[cust.goodId] = (next.worn[cust.goodId] || 0) + 1;
+      if (cust.condition === "fine") next.fine[cust.goodId] = (next.fine[cust.goodId] || 0) + 1;
+      next.nightIndex += 1;
+      next.lastMessage = `\u6536\u5497${cust.name}\uFF0C\u4ED8 ${price} \u5169\u3002`;
+      return { ok: true, state: next, cue: "coin" };
+    }
+    return { ok: false, reason: "\u5187\u5462\u4E00\u6B65", state: state2 };
+  }
+  function actTip(state2, cust, action) {
+    if (action === "pass") return passGuest(state2, "\u4F60\u5187\u8CB7\u5462\u55AE\u98A8\u8072\u3002");
+    if (action !== "buy") return { ok: false, reason: "\u5187\u5462\u4E00\u6B65", state: state2 };
+    if (state2.silver < cust.ask) return { ok: false, reason: "\u9280\u5169\u5514\u5920", state: state2 };
+    const next = clone(state2);
+    ensureMaps(next);
+    next.silver -= cust.ask;
+    const event = {
+      id: `tip-${state2.day}-${cust.cityId}`,
+      regionId: cityById(cust.cityId).regionId,
+      title: "\u591C\u805E",
+      body: `${cust.cityName}\u8FD1${cust.days}\u65E5\u6436${cust.name}\u3002`,
+      mods: { [cust.goodId]: 0.16 },
+      untilDay: state2.day + cust.days,
+      auto: true
+    };
+    next.effects.push(event);
+    next.nightIndex += 1;
+    next.lastMessage = event.body;
+    return { ok: true, state: next, event, cue: "coin" };
+  }
+  function actSmith(state2, cust, action) {
+    if (action === "pass") return passGuest(state2, "\u4F60\u5187\u8ACB\u4EBA\u6574\u8CA8\u3002");
+    if (action !== "repair") return { ok: false, reason: "\u5187\u5462\u4E00\u6B65", state: state2 };
+    if (!GOODS.some((good) => (state2.inventory?.[good.id] || 0) > 0)) return { ok: false, reason: "\u884C\u56CA\u4FC2\u7A7A", state: state2 };
+    if ((state2.inventory?.[cust.goodId] || 0) < 1) return { ok: false, reason: "\u884C\u56CA\u5187\u5462\u6A23", state: state2 };
+    if (state2.silver < cust.ask) return { ok: false, reason: "\u9280\u5169\u5514\u5920", state: state2 };
+    const next = clone(state2);
+    ensureMaps(next);
+    next.silver -= cust.ask;
+    if (cust.worn && (next.worn[cust.goodId] || 0) > 0) {
+      next.worn[cust.goodId] -= 1;
+      if (next.worn[cust.goodId] <= 0) delete next.worn[cust.goodId];
+      next.lastMessage = `${cust.name}\u6574\u7FFB\u65B0\uFF0C\u4ED8 ${cust.ask} \u5169\u3002`;
+    } else {
+      next.fine[cust.goodId] = (next.fine[cust.goodId] || 0) + 1;
+      next.lastMessage = `${cust.name}\u6574\u4EAE\u5497\uFF0C\u4ED8 ${cust.ask} \u5169\u3002`;
+    }
+    next.nightIndex += 1;
+    return { ok: true, state: next, cue: "craft" };
+  }
+  function actFence(state2, cust, action) {
+    if (action === "pass") return passGuest(state2, "\u4F60\u5187\u4EA4\u8CA8\u3002");
+    if (action !== "deal") return { ok: false, reason: "\u5187\u5462\u4E00\u6B65", state: state2 };
+    if (have(state2, "hot") < 1) return { ok: false, reason: "\u884C\u56CA\u5187\u5462\u6A23", state: state2 };
+    const next = clone(state2);
+    ensureMaps(next);
+    const price = cust.offer;
+    releaseSold(next, "hot");
+    next.silver += price;
+    next.nightIndex += 1;
+    const nerve = state2.attrs?.nerve ?? 1;
+    const heat = hash(state2.day, state2.cityId, "heat") % 10 < Math.max(1, 5 - Math.min(4, nerve - 1));
+    if (heat) {
+      next.rep = Math.max(0, next.rep - 3);
+      next.silver = Math.max(0, next.silver - 6);
+    }
+    const event = recordSale(next, "hot", 1);
+    next.lastMessage = heat ? `\u6697\u8DEF\u6536\u5497\u71D9\u624B\u8CA8\uFF0C\u5165\u5E33 ${price} \u5169\uFF0C\u5DEE\u4EBA\u8DDF\u904E\u4E00\u622A\uFF0C\u7F70\u516D\u5169\u3002` : `\u6697\u8DEF\u6536\u5497\u71D9\u624B\u8CA8\uFF0C\u5165\u5E33 ${price} \u5169\u3002`;
+    if (event) next.lastMessage += event.body;
+    return { ok: true, state: next, price, heat, event, cue: "deal" };
+  }
   function nightAct(state2, action) {
     const board = nightBoard(state2);
     if (!board.current) return { ok: false, reason: "\u4ECA\u665A\u5187\u5BA2\u4E86", state: state2 };
     const cust = board.current;
-    if (action === "pass") {
-      const next = clone(state2);
-      next.nightIndex += 1;
-      next.lastMessage = "\u4F60\u5187\u4E0A\u67B6\u3002";
-      return { ok: true, state: next };
-    }
-    if (have(state2, cust.goodId) < 1) {
-      return { ok: false, reason: "\u884C\u56CA\u5187\u5462\u6A23", state: state2 };
-    }
-    if (action === "deal" || action === "haggle") {
-      const accept = action === "deal" || hash(state2.day, state2.cityId, cust.index, "haggle") % 5 < 3;
-      const next = clone(state2);
-      next.nightIndex += 1;
-      if (!accept) {
-        next.lastMessage = "\u4F62\u6416\u982D\u8D70\u5497\u3002";
-        return { ok: true, state: next, accepted: false };
-      }
-      const price = action === "deal" ? cust.offer : Math.round(cust.offer * 1.16);
-      addItem(next, cust.goodId, -1);
-      next.silver += price;
-      next.rep += action === "deal" ? 1 : 2;
-      next.deals = (next.deals || 0) + 1;
-      if (next.deals % 4 === 0) next.points = (next.points || 0) + 1;
-      const event = recordSale(next, cust.goodId, 1);
-      next.lastMessage = action === "deal" ? `\u6210\u4EA4${cust.name}\uFF0C\u6536 ${price} \u5169\u3002` : `\u9084\u50F9\u6210\u529F\uFF0C\u6536 ${price} \u5169\u3002`;
-      if (event) next.lastMessage += event.body;
-      return { ok: true, state: next, accepted: true, price, event };
-    }
-    return { ok: false, reason: "\u5187\u5462\u4E00\u6B65", state: state2 };
+    if (cust.kind === "pawn") return actPawn(state2, cust, action);
+    if (cust.kind === "tip") return actTip(state2, cust, action);
+    if (cust.kind === "smith") return actSmith(state2, cust, action);
+    if (cust.kind === "fence") return actFence(state2, cust, action);
+    return actBuyer(state2, cust, action);
   }
   function closeNight(state2) {
     let next = clone(state2);
     next.day += 1;
     next.nightIndex = 0;
+    next.nightNote = {};
     next.effects = liveEffects(next);
     next = applyRestock(next);
     next.lastMessage = `\u65B0\u7684\u4E00\u65E5\uFF0C${weatherLabel(next.day)}\u3002`;
@@ -2009,6 +2441,12 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       tool: state2.tool || null,
       porters: state2.porters || 0,
       nightIndex: state2.nightIndex,
+      nightNote: state2.nightNote || {},
+      basis: state2.basis || {},
+      basisQty: state2.basisQty || {},
+      worn: state2.worn || {},
+      fine: state2.fine || {},
+      display: state2.display || [],
       points: state2.points || 0,
       deals: state2.deals || 0,
       seenRegions: state2.seenRegions || {},
@@ -2016,6 +2454,44 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       origin: state2.origin,
       lastMessage: state2.lastMessage || ""
     };
+  }
+  function cleanMap(rawMap, inventory, capToQty = false) {
+    const out = {};
+    if (!rawMap || typeof rawMap !== "object" || !inventory) return out;
+    for (const [id, value] of Object.entries(rawMap)) {
+      if (!goodById(id) || !(inventory[id] > 0)) continue;
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) continue;
+      const rounded = Math.round(n);
+      out[id] = capToQty ? Math.min(inventory[id], rounded) : rounded;
+    }
+    return out;
+  }
+  function cleanDisplay(rawDisplay, inventory) {
+    if (!Array.isArray(rawDisplay) || !inventory) return [];
+    const seen = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const id of rawDisplay) {
+      if (seen.has(id) || !goodById(id) || !(inventory[id] > 0)) continue;
+      seen.add(id);
+      out.push(id);
+      if (out.length >= DISPLAY_MAX) break;
+    }
+    return out;
+  }
+  function cleanNote(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object") return out;
+    for (const [key, value] of Object.entries(raw)) {
+      if (!value || typeof value !== "object") continue;
+      const note = {};
+      if (value.appraised) note.appraised = true;
+      if (value.sharp) note.sharp = true;
+      if (value.haggled) note.haggled = true;
+      if (Number.isFinite(Number(value.ask)) && Number(value.ask) > 0) note.ask = Math.round(Number(value.ask));
+      if (Object.keys(note).length) out[key] = note;
+    }
+    return out;
   }
   function fromSave(raw) {
     if (!raw || raw.v !== 1 || typeof raw.name !== "string" || !cityById(raw.cityId)) return null;
@@ -2044,6 +2520,12 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       tool: toolById(raw.tool) ? raw.tool : null,
       porters: Math.max(0, raw.porters || 0),
       nightIndex: raw.nightIndex || 0,
+      nightNote: cleanNote(raw.nightNote),
+      basis: cleanMap(raw.basis, raw.inventory),
+      basisQty: cleanMap(raw.basisQty, raw.inventory, true),
+      worn: cleanMap(raw.worn, raw.inventory, true),
+      fine: cleanMap(raw.fine, raw.inventory, true),
+      display: cleanDisplay(raw.display, raw.inventory),
       points: Math.max(0, raw.points || 0),
       deals: Math.max(0, raw.deals || 0),
       seenRegions: { ...raw.seenRegions || {} },
@@ -2087,7 +2569,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     error: "",
     certBack: false,
     pending: null,
-    scroll: 0
+    scroll: 0,
+    marketView: "all"
   };
   var state = null;
   var lastScreen = "";
@@ -2246,27 +2729,64 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       return (state.inventory[g.id] || 0) > 0 || q.stock > 0 || region.cheap.includes(g.id);
     });
   }
+  function lotTags(lot) {
+    const tags = [];
+    if (!lot.local) tags.push("\u5916\u5730");
+    if (lot.crafted) tags.push("\u624B\u88FD");
+    if (lot.worn) tags.push(`\u820A ${lot.worn}`);
+    if (lot.fine) tags.push(`\u4EAE ${lot.fine}`);
+    return tags.join(" \xB7 ");
+  }
+  function lotMeta(lot) {
+    const cost = lot.known ? `\u6210\u672C ${lot.avg}${lot.knownQty < lot.qty ? `\uFF08${lot.knownQty} \u4EF6\uFF09` : ""}` : "\u6210\u672C\u672A\u8A18";
+    const profit = lot.profit == null ? "" : `<b class="${lot.profit >= 0 ? "up" : "down"}">${lot.profit >= 0 ? "+" : "\u2212"}${Math.abs(lot.profit)}</b>`;
+    const tags = lotTags(lot);
+    return `${cost} \xB7 \u8CE3 ${lot.bid}${profit ? ` \xB7 ${profit}` : ""}${tags ? ` \xB7 ${tags}` : ""}`;
+  }
+  function renderHold(held) {
+    if (!held.length) return `<p class="empty">\u884C\u56CA\u672A\u6709\u8CA8\u3002\u5916\u5730\u8CA8\u540C\u624B\u88FD\u8CA8\u90FD\u6703\u51FA\u73FE\u55BA\u5462\u5EA6\uFF0C\u53EF\u4EE5\u76F4\u63A5\u8CE3\u3002</p>`;
+    return `<ul class="hold-list">${held.map((lot) => `<li class="hold-row">
+      <img src="${esc(goodArt(lot.id))}" alt="" width="321" height="236">
+      <span><span class="good-name">${esc(lot.name)} <em>\xD7${lot.qty}</em></span><span class="stock">${lotMeta(lot)}</span></span>
+      <button type="button" class="sell" data-act="sell" data-id="${lot.id}">\u8CE3\u51FA</button>
+    </li>`).join("")}</ul>`;
+  }
   function renderMarket() {
+    const held = holdingReport(state);
+    const view = ui.marketView === "held" ? "held" : "all";
     const rows = visibleGoods().map((g) => {
       const q = quote(state, g.id);
       const on = ui.goodId === g.id;
       const buyWhy = blockReason(g, q);
-      const canSell = (state.inventory[g.id] || 0) > 0;
+      const owned = state.inventory[g.id] || 0;
+      const lot = held.find((item) => item.id === g.id);
       return `<li class="good-row${on ? " is-on" : ""}">
       <button type="button" class="good" data-act="select" data-id="${g.id}" aria-pressed="${on}">
         <img src="${esc(goodArt(g.id))}" alt="" width="321" height="236">
-        <span><span class="good-name">${esc(g.name)}</span><span class="stock">${q.stock > 0 ? `\u5E02\u5B58 ${q.stock}` : "\u7F3A\u8CA8"}</span></span>
-        <span class="prices"><span class="ask"><span class="k">\u8CB7</span><b>${q.ask}</b></span><span class="bid"><span class="k">\u8CE3</span><b>${q.bid}</b></span></span>
+        <span><span class="good-name">${esc(g.name)}</span><span class="stock">${owned ? `\u6301\u6709 ${owned}` : ""}${owned ? " \xB7 " : ""}${q.stock > 0 ? `\u5E02\u5B58 ${q.stock}` : "\u7F3A\u8CA8"}${lot && !lot.local ? " \xB7 \u5916\u5730" : ""}</span></span>
+        <span class="prices"><span class="ask"><span class="k">\u8CB7</span><b>${q.ask}</b></span><span class="bid"><span class="k">\u8CE3</span><b>${lot ? lot.bid : q.bid}</b></span></span>
       </button>
       ${on ? `<div class="deal">
         <button type="button" class="buy" data-act="buy" data-id="${g.id}" ${buyWhy ? `aria-disabled="true" data-reason="${esc(buyWhy)}"` : ""} aria-describedby="trade-hint">\u8CB7\u5165</button>
-        <button type="button" class="sell" data-act="sell" data-id="${g.id}" ${canSell ? "" : 'aria-disabled="true" data-reason="\u884C\u56CA\u5187\u5462\u6A23"'}>\u8CE3\u51FA</button>
+        <button type="button" class="sell" data-act="sell" data-id="${g.id}" ${owned ? "" : 'aria-disabled="true" data-reason="\u884C\u56CA\u5187\u5462\u6A23"'}>\u8CE3\u51FA</button>
       </div>` : ""}
     </li>`;
     }).join("");
+    const summary = held.length ? held.map((lot) => `${lot.name} \xD7${lot.qty}`).join("\u3001") : "\u884C\u56CA\u672A\u6709\u8CA8";
     const body = `<h1 id="screen-title" class="visually-hidden" tabindex="-1">\u5E02\u96C6</h1>
-    <p id="trade-hint" class="visually-hidden">\u8CB7\u5165\u540C\u8CE3\u51FA\u53EA\u6703\u51FA\u73FE\u55BA\u63C0\u4E2D\u5605\u8CA8\u3002</p>
-    <ul class="good-list">${rows}</ul>`;
+    <section class="hold" aria-label="\u6211\u5605\u5B58\u8CA8">
+      <div class="hold-head">
+        <h2>\u6211\u5605\u5B58\u8CA8 <span>${held.length}</span></h2>
+        <div class="seg" role="group" aria-label="\u5E02\u96C6\u7BC4\u570D">
+          <button type="button" data-act="market-view" data-view="all" aria-pressed="${view === "all"}">\u5168\u90E8</button>
+          <button type="button" data-act="market-view" data-view="held" aria-pressed="${view === "held"}">\u6211\u5605\u5B58\u8CA8</button>
+        </div>
+      </div>
+      <p class="hold-summary">${esc(summary)}</p>
+      ${view === "held" ? renderHold(held) : ""}
+    </section>
+    ${view === "all" ? `<p id="trade-hint" class="visually-hidden">\u8CB7\u5165\u540C\u8CE3\u51FA\u53EA\u6703\u51FA\u73FE\u55BA\u63C0\u4E2D\u5605\u8CA8\u3002\u6301\u6709\u7684\u8CA8\u6703\u6A19\u660E\u6301\u6709\u6578\u91CF\u3002</p>
+    <ul class="good-list">${rows}</ul>` : ""}`;
     return marketFrame("market", streetForWeather(), body);
   }
   function renderMap() {
@@ -2287,35 +2807,94 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     <ul class="city-list">${rows}</ul>`;
     return marketFrame("map", streetForWeather(), body);
   }
+  function nightButton(label, action, disabled, reason, icon = "", primary = false) {
+    const block = disabled ? `aria-disabled="true" data-reason="${esc(reason)}"` : "";
+    return `<button type="button" class="${primary ? "deal-btn" : action === "pass" ? "skip" : "haggle"}" data-act="night" data-do="${action}" ${block}>${icon}${label}</button>`;
+  }
+  function nightActions(cust) {
+    if (cust.kind === "pawn") {
+      const broke = state.silver < cust.ask;
+      const fake = cust.revealed && cust.condition === "fake";
+      return [
+        nightButton("\u9451\u8CA8", "appraise", cust.checked, "\u5DF2\u7D93\u9451\u904E"),
+        nightButton("\u9084\u50F9", "haggle", cust.haggled, "\u5DF2\u7D93\u9084\u904E\u50F9", ICONS.scale),
+        nightButton("\u6536\u8CA8", "buy", broke || fake, fake ? "\u4FC2\u5047\u8CA8" : "\u9280\u5169\u5514\u5920", ICONS.hands, true),
+        nightButton("\u8B1D\u7D55", "pass", false, "", ICONS.crate)
+      ].join("");
+    }
+    if (cust.kind === "tip") {
+      return [
+        nightButton("\u8CB7\u6D88\u606F", "buy", state.silver < cust.ask, "\u9280\u5169\u5514\u5920", ICONS.hands, true),
+        nightButton("\u8B1D\u7D55", "pass", false, "", ICONS.crate)
+      ].join("");
+    }
+    if (cust.kind === "smith") {
+      const empty = !GOODS.some((good) => state.inventory[good.id]);
+      return [
+        nightButton(cust.worn ? "\u6574\u7FFB\u65B0" : "\u6574\u4EAE", "repair", empty || state.silver < cust.ask, empty ? "\u884C\u56CA\u4FC2\u7A7A" : "\u9280\u5169\u5514\u5920", "", true),
+        nightButton("\u8B1D\u7D55", "pass", false, "", ICONS.crate)
+      ].join("");
+    }
+    if (cust.kind === "fence") {
+      const has2 = (state.inventory.hot || 0) > 0;
+      return [
+        nightButton("\u4EA4\u8CA8", "deal", !has2, "\u884C\u56CA\u5187\u5462\u6A23", ICONS.hands, true),
+        nightButton("\u8B1D\u7D55", "pass", false, "", ICONS.crate)
+      ].join("");
+    }
+    const has = (state.inventory[cust.goodId] || 0) > 0;
+    return [
+      nightButton("\u9084\u50F9", "haggle", !has, "\u884C\u56CA\u5187\u5462\u6A23", ICONS.scale),
+      nightButton("\u6210\u4EA4", "deal", !has, "\u884C\u56CA\u5187\u5462\u6A23", ICONS.hands, true),
+      nightButton("\u4E0D\u4E0A\u67B6", "pass", false, "", ICONS.crate)
+    ].join("");
+  }
+  function pawnNote(cust) {
+    if (cust.kind !== "pawn") return "";
+    const label = { fake: "\u5047\u8CA8", worn: "\u820A\u8CA8", fine: "\u4E0A\u4F73", sound: "\u5E73\u8CA8" }[cust.condition];
+    const text = cust.revealed ? `\u6210\u8272\uFF1A${label}` : cust.checked ? "\u6210\u8272\u7747\u5514\u900F\u3002" : "\u672A\u9451\u8CA8\u3002\u773C\u529B\u9AD8\u5572\u5148\u7747\u5F97\u6E96\u3002";
+    return `<p class="hint">${text}</p>`;
+  }
+  function renderCabinet() {
+    const held = holdingReport(state);
+    const shown = state.display || [];
+    const chips = held.length ? held.map((lot) => {
+      const on = shown.includes(lot.id);
+      return `<button type="button" class="chip${on ? " is-on" : ""}" data-act="display" data-id="${lot.id}" aria-pressed="${on}">${esc(lot.name)} \xD7${lot.qty}</button>`;
+    }).join("") : `<p class="empty">\u884C\u56CA\u672A\u6709\u8CA8\u53EF\u4EE5\u64FA\u3002</p>`;
+    return `<section class="cabinet" aria-label="\u5C55\u6AC3">
+    <h2>\u5C55\u6AC3 ${shown.length}/${DISPLAY_MAX}</h2>
+    <p class="empty">\u64FA\u51FA\u569F\u5605\u8CA8\u6703\u5F15\u5C0D\u5473\u5605\u5BA2\uFF0C\u51FA\u50F9\u9AD8\u904E\u5C0B\u5E38\u3002</p>
+    <div class="chip-row">${chips}</div>
+  </section>`;
+  }
   function renderNight() {
     const board = nightBoard(state);
     const shelf = board.customers.map((c, i) => `
     <li class="${i === state.nightIndex ? "is-on" : ""}">
       <img src="${esc(goodArt(c.goodId))}" alt="" width="321" height="236">
       <span>${esc(c.name)}</span>
+      <em>${esc(c.role || "\u8CB7\u8CA8")}</em>
       <b>${c.offer} \u5169</b>
     </li>`).join("");
     let bargain = `<p class="empty">\u4ECA\u665A\u5187\u5BA2\u4E86\u3002</p><button type="button" class="primary" data-act="close-night">\u6536\u8216</button>`;
     if (board.current) {
-      const has = (state.inventory[board.current.goodId] || 0) > 0;
-      bargain = `<p class="night-copy">${esc(board.current.line)}</p>
+      bargain = `<p class="night-kicker">${esc(board.current.role || "\u8CB7\u8CA8")} \xB7 \u7B2C ${state.nightIndex + 1} / ${board.customers.length} \u4F4D</p>
+      <p class="night-copy${board.current.line.length > 14 ? " is-long" : ""}">${esc(board.current.line)}</p>
       <div class="who">
         <img src="${esc(goodArt(board.current.goodId))}" alt="" width="321" height="236">
         <span class="offer-name">${esc(board.current.name)}</span>
         <span class="offer-price">${board.current.offer} \u5169</span>
       </div>
-      <div class="bargain-actions">
-        <button type="button" class="haggle" data-act="night" data-do="haggle" ${has ? "" : 'aria-disabled="true" data-reason="\u884C\u56CA\u5187\u5462\u6A23"'}>${ICONS.scale}\u9084\u50F9</button>
-        <button type="button" class="deal-btn" data-act="night" data-do="deal" ${has ? "" : 'aria-disabled="true" data-reason="\u884C\u56CA\u5187\u5462\u6A23"'}>${ICONS.hands}\u6210\u4EA4</button>
-        <button type="button" class="skip" data-act="night" data-do="pass">${ICONS.crate}\u4E0D\u4E0A\u67B6</button>
-      </div>
-      <p class="hint">\u7B2C ${state.nightIndex + 1} / ${board.customers.length} \u4F4D \xB7 \u4ECA\u65E5\u4EBA\u6D41 ${esc(board.traffic.label)}</p>`;
+      ${pawnNote(board.current)}
+      <div class="bargain-actions">${nightActions(board.current)}</div>`;
     } else {
       bargain = `<p class="night-kicker">\u4ECA\u65E5\u4EBA\u6D41 ${esc(board.traffic.label)}</p>${bargain}`;
     }
     const body = `<h1 id="screen-title" class="section-head" tabindex="-1">\u591C\u8216 \xB7 \u4EA5\u6642</h1>
-    <ul class="shelf" aria-label="\u6AC3\u6AAF">${shelf}</ul>
-    <div class="bargain">${bargain}</div>`;
+    ${renderCabinet()}
+    <div class="bargain">${bargain}</div>
+    <ul class="shelf" aria-label="\u4ECA\u665A\u4F86\u5BA2">${shelf}</ul>`;
     return marketFrame("night", ART.shop, body, { street: false, short: true });
   }
   function renderPerson() {
@@ -2539,6 +3118,22 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       paint();
       return;
     }
+    if (act === "market-view") {
+      ui.marketView = button.dataset.view === "held" ? "held" : "all";
+      sfxTab();
+      paint();
+      return;
+    }
+    if (act === "display") {
+      const result = toggleDisplay(state, button.dataset.id);
+      if (!result.ok) {
+        fail(result.reason);
+        return;
+      }
+      sfxTap();
+      setState(result.state);
+      return;
+    }
     if (act === "tab") {
       ui.screen = button.dataset.screen;
       ui.scroll = 0;
@@ -2617,8 +3212,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       }
       state = result.state;
       writeSave();
-      if (button.dataset.do === "pass") sfxTap();
-      else sfxDeal();
+      const cues = { tap: sfxTap, coin: sfxCoin, deal: sfxDeal, event: sfxEvent, error: sfxError, craft: sfxCraft };
+      (cues[result.cue] || sfxDeal)();
       if (result.event?.title) {
         ui.pending = { kind: "event", event: result.event };
         openGate({
