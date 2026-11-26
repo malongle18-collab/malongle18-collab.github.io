@@ -1632,6 +1632,11 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       points: 0,
       deals: 0,
       seenRegions: {},
+      corners: [],
+      deeds: [],
+      life: null,
+      dead: false,
+      epitaph: "",
       attrs: null,
       origin: null,
       lastMessage: ""
@@ -1723,6 +1728,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       inventory.tea = 4;
       inventory.pin = 1;
     }
+    const bornAge = rngInt(rng, 18, 26);
     return {
       auspice,
       cityId: city2.id,
@@ -1741,6 +1747,11 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
         debtDue,
         rent,
         line: birthLine(house.id, trade)
+      },
+      life: {
+        born: bornAge,
+        span: bornAge + rngInt(rng, 24, 46),
+        originCity: city2.id
       }
     };
   }
@@ -1756,6 +1767,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       state3.origin = { ...state3.attrs };
       grantRegionPoint(state3);
       if (auspice === "chun") state3.inventory.rice = 2;
+      state3.life = { born: 20, span: 120, originCity: state3.cityId };
       return { ok: true, state: state3 };
     }
     const life = rollLife();
@@ -1768,6 +1780,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     state2.inventory = life.inventory;
     state2.display = life.display;
     state2.birth = life.birth;
+    state2.life = life.life;
     grantRegionPoint(state2);
     state2.lastMessage = life.birth.line;
     return { ok: true, state: state2 };
@@ -1852,12 +1865,14 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     next.silver += pay;
     next.day += 1;
     coolHeat(next, 1);
+    const aged = markTime(next, 1);
     next.nightIndex = 0;
     next.nightNote = {};
     next.effects = liveEffects(next);
     const moved = applyRestock(next);
+    syncCorners(moved);
     const dues = settleObligations(moved);
-    moved.lastMessage = [`\u505A\u4E86\u4E00\u65E5${job.name}\uFF0C\u5F97 ${pay} \u5169\u3002`, note, ...dues].filter(Boolean).join("");
+    moved.lastMessage = [`\u505A\u4E86\u4E00\u65E5${job.name}\uFF0C\u5F97 ${pay} \u5169\u3002`, note, ...dues, ...aged].filter(Boolean).join("");
     return { ok: true, state: moved, pay };
   }
   function weatherTouch(weather, goodId) {
@@ -1934,12 +1949,115 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     const scarce = scarcity(qty);
     const supply = supplyMod(sold);
     const event = effectMod(state2, regionId, goodId);
-    const center = base * (1 + sense + noise2 + scarce + supply + event);
+    const grip = cornerPremium(state2, goodId);
+    const center = base * (1 + sense + noise2 + scarce + supply + event + grip);
     const eye = Math.max(0, (state2.attrs?.eye ?? 1) - 1) * 0.015;
     let ask = Math.max(2, Math.round(center * 1.14 * (1 - eye)));
     let bid = Math.max(1, Math.round(center * 0.8 * (1 + eye)));
     if (bid >= ask) bid = ask - 1;
-    return { ask, bid, stock: qty, sense, supply, event, scarce };
+    return { ask, bid, stock: qty, sense, supply, event, scarce, grip };
+  }
+  var CORNER_DAYS = 6;
+  var CORNER_HOLD = 6;
+  var DAYS_PER_YEAR = 4;
+  function cornerPremium(state2, goodId) {
+    const corner = (state2.corners || []).find((item) => item.cityId === state2.cityId && item.goodId === goodId && item.days > 0);
+    if (!corner) return 0;
+    const stock = state2.stock?.[state2.cityId]?.[goodId] ?? 0;
+    if (stock > 2) return 0;
+    return Math.min(0.48, corner.days * 0.08);
+  }
+  function syncCorners(state2) {
+    state2.corners ||= [];
+    const notes = [];
+    const cityId = state2.cityId;
+    const regionId = cityById(cityId).regionId;
+    for (const good of GOODS) {
+      const stock = state2.stock?.[cityId]?.[good.id] || 0;
+      const held = state2.inventory?.[good.id] || 0;
+      const tight = stock <= 2 && held >= CORNER_HOLD;
+      let corner = state2.corners.find((item) => item.cityId === cityId && item.goodId === good.id);
+      if (!tight) {
+        if (corner && !corner.done) corner.active = false;
+        continue;
+      }
+      if (!corner) {
+        corner = { cityId, regionId, goodId: good.id, days: 0, active: true, done: false };
+        state2.corners.push(corner);
+        notes.push(`${good.name}\u5728${cityById(cityId).name}\u5DF2\u88AB\u6536\u4E7E\uFF0C\u628A\u6301\u9054\u516D\u65E5\u4FBF\u53EF\u5750\u5730\u8D77\u50F9\u3002`);
+      } else if (!corner.done) {
+        corner.active = true;
+      }
+    }
+    return notes;
+  }
+  function ageCorners(state2, days) {
+    state2.corners ||= [];
+    state2.deeds ||= [];
+    const notes = [];
+    if (!days || state2.dead) return notes;
+    for (const corner of state2.corners) {
+      if (corner.done || !corner.active || corner.cityId !== state2.cityId) continue;
+      const stock = state2.stock?.[state2.cityId]?.[corner.goodId] || 0;
+      const held = state2.inventory?.[corner.goodId] || 0;
+      if (stock > 2 || held < CORNER_HOLD) {
+        corner.active = false;
+        continue;
+      }
+      corner.days += days;
+      if (corner.days >= CORNER_DAYS) {
+        corner.done = true;
+        corner.active = false;
+        const name = goodById(corner.goodId).name;
+        const title = `\u5750\u5730\u8D77\u50F9\xB7${name}`;
+        if (!state2.deeds.some((deed) => deed.id === `${corner.cityId}:${corner.goodId}`)) {
+          state2.deeds.push({
+            id: `${corner.cityId}:${corner.goodId}`,
+            title,
+            goodId: corner.goodId,
+            cityId: corner.cityId
+          });
+          state2.rep = Math.max(0, (state2.rep || 0) - 8);
+          notes.push(`${title}\u5DF2\u6210\uFF0C${cityById(corner.cityId).name}\u7269\u50F9\u9AD8\u6F32\uFF0C\u8072\u671B\u4E0B\u8DCC\u3002`);
+        }
+      }
+    }
+    return notes;
+  }
+  function cornerBrief(state2) {
+    return (state2.corners || []).filter((corner) => corner.cityId === state2.cityId && corner.active && !corner.done).map((corner) => `\u628A\u6301${goodById(corner.goodId).name} ${corner.days}/${CORNER_DAYS} \u65E5\uFF0C\u5E02\u50F9\u96A8\u4E4B\u65E5\u9AD8\u3002`);
+  }
+  function hiddenYears(state2) {
+    if (!state2.life) return null;
+    return state2.life.born + Math.floor((Math.max(1, state2.day) - 1) / DAYS_PER_YEAR);
+  }
+  function writeEpitaph(state2) {
+    const lived = hiddenYears(state2);
+    const origin = cityById(state2.life?.originCity || state2.cityId);
+    const house = state2.birth?.houseName || "\u820A\u6A94\u672A\u8A18";
+    const trade = state2.birth?.trade || "\u672A\u8A18";
+    const regions = Object.keys(state2.seenRegions || {}).map((id) => regionById(id)?.name).filter(Boolean);
+    const deeds = (state2.deeds || []).map((deed) => deed.title);
+    return [
+      `${state2.name}\u7684\u884C\u5546\u4E00\u751F\u3002`,
+      `\u4EAB\u5E74 ${lived} \u6B72\u3002`,
+      `\u51FA\u8EAB${house}\uFF0C\u7236\u6BCD\u5F9E\u4E8B${trade}\uFF0C\u8D77\u65BC${origin?.name || "\u672A\u77E5"}\u3002`,
+      `\u9918\u9280 ${state2.silver} \u5169\uFF0C\u8072\u671B ${state2.rep}\uFF0C\u8077\u929C${rankOf(state2.rep)}\u3002`,
+      regions.length ? `\u884C\u7D93${regions.join("\u3001")}\u3002` : "\u8DB3\u8DE1\u672A\u51FA\u4E00\u5730\u3002",
+      deeds.length ? `\u6210\u5C31\uFF1A${deeds.join("\u3001")}\u3002` : "\u672A\u7559\u4E0B\u7279\u5225\u7684\u6210\u5C31\u3002",
+      `\u884C\u5546\u4E4B\u65E5\u5171 ${state2.day} \u65E5\u3002`
+    ].join("");
+  }
+  function reviewLife(state2) {
+    if (!state2.life || state2.dead) return [];
+    const lived = hiddenYears(state2);
+    if (lived < state2.life.span) return [];
+    state2.dead = true;
+    state2.epitaph = writeEpitaph(state2);
+    return [state2.epitaph];
+  }
+  function markTime(state2, days) {
+    return [...ageCorners(state2, days), ...reviewLife(state2)];
   }
   function edge(from, to) {
     return ROUTES.find((r) => r.a === from && r.b === to || r.a === to && r.b === from);
@@ -2387,7 +2505,8 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     addItem(next, goodId, qty);
     rememberCost(next, goodId, qty, bill);
     if (goodId === "hot") next.heat = (next.heat || 0) + qty * 2;
-    next.lastMessage = `\u8CB7\u5165${goodById(goodId).name} ${qty}\uFF0C\u4ED8 ${bill} \u5169\u3002`;
+    const gripNotes = syncCorners(next);
+    next.lastMessage = [`\u8CB7\u5165${goodById(goodId).name} ${qty}\uFF0C\u4ED8 ${bill} \u5169\u3002`, ...gripNotes].join("");
     return { ok: true, state: next, bill };
   }
   function sell(state2, goodId, qty = 1) {
@@ -2490,16 +2609,18 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     grantRegionPoint(next);
     next.day += cost.days;
     coolHeat(next, cost.days);
+    const aged = markTime(next, cost.days);
     next.nightIndex = 0;
     next.nightNote = {};
     next.effects = liveEffects(next);
     next = applyRestock(next);
+    syncCorners(next);
     const event = makeEvent(next, fromId, destId);
     if (event?.auto) next = applyAuto(next, event);
     const arrived = `\u5DF2\u62B5\u9054${cityById(destId).name}\u3002`;
     const notes = passageNotes(state2, next, { upkeep: paidUpkeep });
     const dues = settleObligations(next);
-    const pieces = [porterScatter, event ? event.body : "", arrived, ...notes, ...dues].filter(Boolean);
+    const pieces = [porterScatter, event ? event.body : "", arrived, ...notes, ...dues, ...aged].filter(Boolean);
     next.lastMessage = pieces.join("");
     return { ok: true, state: next, event, cost };
   }
@@ -2981,13 +3102,15 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     let next = clone(state2);
     next.day += 1;
     coolHeat(next, 1);
+    const aged = markTime(next, 1);
     next.nightIndex = 0;
     next.nightNote = {};
     next.effects = liveEffects(next);
     next = applyRestock(next);
+    syncCorners(next);
     const notes = passageNotes(state2, next, { quietDay: true });
     const dues = settleObligations(next);
-    next.lastMessage = [`\u65B0\u7684\u4E00\u65E5\uFF0C\u7B2C ${next.day} \u65E5\uFF0C${weatherLabel(next.day)}\u3002`, ...notes, ...dues].join("");
+    next.lastMessage = [`\u65B0\u7684\u4E00\u65E5\uFF0C\u7B2C ${next.day} \u65E5\uFF0C${weatherLabel(next.day)}\u3002`, ...notes, ...dues, ...aged].join("");
     return { ok: true, state: next };
   }
   function taughtAttr(cityId) {
@@ -3013,13 +3136,15 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     next.silver -= offer.fee;
     next.day += offer.days;
     coolHeat(next, offer.days);
+    const aged = markTime(next, offer.days);
     next.nightIndex = 0;
     next.attrs[offer.attr] += 1;
     next.effects = liveEffects(next);
     next = applyRestock(next);
+    syncCorners(next);
     const notes = passageNotes(state2, next, { quietDay: true });
     const dues = settleObligations(next);
-    next.lastMessage = [`\u5B78\u4E86${offer.days}\u65E5${offer.name}\uFF0C\u73FE\u5728\u662F ${next.attrs[offer.attr]}\u3002\u82B1\u8CBB ${offer.fee} \u5169\u3002`, ...notes, ...dues].join("");
+    next.lastMessage = [`\u5B78\u4E86${offer.days}\u65E5${offer.name}\uFF0C\u73FE\u5728\u662F ${next.attrs[offer.attr]}\u3002\u82B1\u8CBB ${offer.fee} \u5169\u3002`, ...notes, ...dues, ...aged].join("");
     return { ok: true, state: next, gain: 1 };
   }
   function spendPoint(state2, attrId) {
@@ -3060,6 +3185,11 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       heat: state2.heat || 0,
       orderFill: state2.orderFill || {},
       birth: state2.birth || null,
+      corners: state2.corners || [],
+      deeds: state2.deeds || [],
+      life: state2.life || null,
+      dead: Boolean(state2.dead),
+      epitaph: state2.epitaph || "",
       points: state2.points || 0,
       deals: state2.deals || 0,
       seenRegions: state2.seenRegions || {},
@@ -3132,6 +3262,18 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     }
     return out;
   }
+  function hiddenLifeFor(raw) {
+    if (raw.life && Number.isInteger(raw.life.born) && Number.isInteger(raw.life.span) && raw.life.span > raw.life.born) {
+      return {
+        born: raw.life.born,
+        span: raw.life.span,
+        originCity: cityById(raw.life.originCity) ? raw.life.originCity : raw.cityId
+      };
+    }
+    const born = 18 + hash(raw.name, raw.cityId, "born") % 9;
+    const span = born + 24 + hash(raw.name, "span") % 23;
+    return { born, span, originCity: raw.cityId };
+  }
   function fromSave(raw) {
     if (!raw || raw.v !== 1 || typeof raw.name !== "string" || !cityById(raw.cityId)) return null;
     if (!AUSPICES[raw.auspice] || !Number.isInteger(raw.day) || raw.day < 1) return null;
@@ -3168,6 +3310,11 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       heat: Number.isFinite(Number(raw.heat)) ? Math.max(0, Math.round(Number(raw.heat))) : (raw.inventory.hot || 0) * 2,
       orderFill: cleanOrderFill(raw.orderFill),
       birth: cleanBirth(raw.birth),
+      corners: Array.isArray(raw.corners) ? raw.corners : [],
+      deeds: Array.isArray(raw.deeds) ? raw.deeds : [],
+      life: hiddenLifeFor(raw),
+      dead: Boolean(raw.dead),
+      epitaph: raw.epitaph || "",
       points: Math.max(0, raw.points || 0),
       deals: Math.max(0, raw.deals || 0),
       seenRegions: { ...raw.seenRegions || {} },
@@ -3467,6 +3614,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     const summary = held.length ? held.map((lot) => `${lot.name} \xD7${lot.qty}`).join("\u3001") : "\u884C\u56CA\u672A\u6709\u8CA8\u7269";
     const body = `<h1 id="screen-title" class="visually-hidden" tabindex="-1">\u5E02\u96C6</h1>
     ${state.silver < 15 ? `<p class="empty">\u9280\u5169\u4E0D\u8DB3\u5341\u4E94\u3002\u53EF\u5230\u4EBA\u7269\u9801\u6253\u5DE5\uFF0C\u5148\u8CFA\u4E00\u7B46\u672C\u9322\u3002</p>` : ""}
+    ${cornerBrief(state).map((line) => `<p class="empty">${esc(line)}</p>`).join("")}
     ${renderTicker()}
     ${renderOrders()}
     <section class="hold" aria-label="\u6211\u7684\u5B58\u8CA8">
@@ -3654,6 +3802,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       <div><span>\u884C\u56CA</span><strong>${pack.used}/${pack.max}</strong></div>
     </div>
     <p class="empty">\u9032\u5EA6\u5DF2\u81EA\u52D5\u4FDD\u5B58\u65BC\u672C\u6A5F\u3002</p>
+    ${goalBlock()}
     ${workBlock()}
     <p class="empty">
       <button type="button" class="text-btn" data-act="show-cert">\u67E5\u770B\u884C\u5546\u7D19</button>
@@ -3680,6 +3829,13 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
       <button type="button" class="text-btn" data-act="dismiss" ${state.porters || 0 ? "" : 'aria-disabled="true" data-reason="\u6C92\u6709\u8173\u592B"'}>\u89E3\u6563\u8173\u592B</button>
     </p>`;
     return marketFrame("person", streetForWeather(), body, { street: false, short: true });
+  }
+  function goalBlock() {
+    const active = cornerBrief(state);
+    const deeds = (state.deeds || []).map((deed) => deed.title);
+    const progress = active.length ? active.map((line) => `<li class="craft-row"><div><span class="city-name">${esc(line)}</span></div></li>`).join("") : `<p class="empty">\u628A\u4E00\u57CE\u7684\u8CA8\u6536\u4E7E\uFF0C\u4E26\u6301\u6709\u81F3\u5C11\u516D\u4EF6\u3002\u9023\u7E8C\u516D\u65E5\uFF0C\u4FBF\u53EF\u5750\u5730\u8D77\u50F9\u3002\u50F9\u5347\uFF0C\u8072\u671B\u8DCC\u3002</p>`;
+    const done = deeds.length ? `<p class="empty">\u6210\u5C31\uFF1A${esc(deeds.join("\u3001"))}</p>` : "";
+    return `<h2 class="section-head">\u5FD7\u5411</h2>${progress.startsWith("<li") ? `<ul class="craft-list">${progress}</ul>` : progress}${done}`;
   }
   function workBlock() {
     const rows = JOBS.map((job) => `<li class="craft-row"><div><span class="city-name">${esc(job.name)}</span><p>${esc(job.blurb)}</p></div>
@@ -3727,7 +3883,25 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
     const label = weatherLabel(state.day);
     return label.includes("\u96E8");
   }
+  function renderEpitaph() {
+    return `<section class="screen title-screen">
+    ${scene(ART.shop, "", true)}
+    <div class="cluster">
+      <article class="paper">
+        <h1 id="screen-title" tabindex="-1">\u884C\u5546\u4E00\u751F</h1>
+        <p class="hint">${esc(state.epitaph || "")}</p>
+        <button type="button" class="primary" data-act="ask-new">\u958B\u65B0\u6A94</button>
+      </article>
+    </div>
+  </section>`;
+  }
   function render() {
+    if (state?.dead) {
+      app.innerHTML = renderEpitaph();
+      document.title = "\u884C\u5546\u4E00\u751F \xB7 \u884C\u5546\u842C\u91CC";
+      lastScreen = "epitaph";
+      return;
+    }
     const views = {
       title: renderTitle,
       birth: renderBirth,
@@ -3823,6 +3997,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
   function onClick(event) {
     const button = event.target.closest("[data-act]");
     if (!button || !app.contains(button)) return;
+    if (state?.dead && button.dataset.act !== "ask-new") return;
     if (button.getAttribute("aria-disabled") === "true") {
       fail(button.dataset.reason || "\u73FE\u5728\u4E0D\u884C");
       return;
@@ -4195,7 +4370,7 @@ dialog p { line-height: 1.55; text-wrap: pretty; }
   var savedOnBoot = readSave();
   if (savedOnBoot) {
     state = savedOnBoot;
-    ui.screen = "market";
+    ui.screen = savedOnBoot.dead ? "epitaph" : "market";
     ui.error = "";
   }
   paint();
